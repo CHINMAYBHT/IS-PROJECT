@@ -4,7 +4,7 @@ import { RiDeleteBin6Line } from 'react-icons/ri';
 import { IoWarningOutline } from 'react-icons/io5';
 import { uuidv4 } from './utils/uuid';
 import { getPasswordStrength } from './utils/password';
-import { generateAiResponse } from './utils/api';
+import { apiClient, encryptionClient, generateAiResponse } from './utils/api';
 import { parseMarkdown } from './utils/markdown';
 
 
@@ -80,26 +80,45 @@ const AuthLayout = ({ title, children, footer }) => (
   </div>
 );
 
-const SignUpPage = ({ setView }) => {
+const SignUpPage = ({ setView, onAuthSuccess }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const strength = password.length > 0 ? getPasswordStrength(password) : null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
     if (strength && strength.text !== "Strong" && strength.text !== "Moderate") {
-      console.error("Password too weak");
+      setError("Password too weak");
       return;
     }
-    // Simulate call
-    console.log("Signing up...", { fullName, email });
-    setView('dashboard');
+
+    setIsLoading(true);
+    try {
+      const result = await apiClient.signUp({
+        fullName,
+        email,
+        password
+      });
+
+      onAuthSuccess(result.token, result.user);
+      setView('dashboard');
+    } catch (error) {
+      // Error message is now user-friendly from the API client
+      setError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <AuthLayout title="Create Account" footer={<>Already have an account? <a href="#" onClick={() => setView('signin')} className="font-semibold text-blue-400 hover:text-blue-300">Sign In</a></>}>
+    <AuthLayout title="Create Account" footer={<>Already have an account? <a href="#" onClick={() => setView('signin')} className="font-semibold text-blue-400 cursor-pointer hover:text-blue-300">Sign In</a></>}>
       <form onSubmit={handleSubmit} className="space-y-4 bg-black p-6 rounded-lg ">
+        {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
         <InputField label="Full Name" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
         <InputField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
         <InputField
@@ -111,26 +130,45 @@ const SignUpPage = ({ setView }) => {
           isPassword
           strength={strength}
         />
-        <Button type="submit" className="w-full" variant="cta">Sign Up</Button>
+        <Button type="submit" className="w-full cursor-pointer" variant="cta" disabled={isLoading}>
+          {isLoading ? 'Signing Up...' : 'Sign Up'}
+        </Button>
       </form>
     </AuthLayout>
   );
 };
 
-const SignInPage = ({ setView }) => {
+const SignInPage = ({ setView, onAuthSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Simulate API call
-    console.log("Signing in...", { email });
-    setView('dashboard');
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const result = await apiClient.signIn({
+        email,
+        password
+      });
+
+      onAuthSuccess(result.token, result.user);
+      setView('dashboard');
+    } catch (error) {
+      // Error message is now user-friendly from the API client
+      setError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <AuthLayout title="Welcome Back" footer={<>Don't have an account? <a href="#" onClick={() => setView('signup')} className="font-semibold text-green-400 hover:text-green-300">Sign Up</a></>}>
       <form onSubmit={handleSubmit} className="space-y-4 bg-black p-6 rounded-lg">
+        {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
         <InputField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
         <InputField
           label="Password"
@@ -140,7 +178,9 @@ const SignInPage = ({ setView }) => {
           placeholder="••••••••"
           isPassword
         />
-        <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white" variant="cta">Sign In</Button>
+        <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white cursor-pointer" variant="cta" disabled={isLoading}>
+          {isLoading ? 'Signing In...' : 'Sign In'}
+        </Button>
       </form>
     </AuthLayout>
   );
@@ -470,23 +510,21 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
                   }`}
                 >
                   {msg.role === 'user' ? (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content || ''}</p>
                   ) : (
-                      <div
-                          className="text-md leading-relaxed whitespace-pre-wrap"
-                          dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
-                      />
+                      (msg.content === null || msg.content === undefined) ? (
+                          // Thinking placeholder
+                          <p className="text-sm text-gray-400 italic">thinking...</p>
+                      ) : (
+                          <div
+                              className="text-md leading-relaxed whitespace-pre-wrap"
+                              dangerouslySetInnerHTML={{ __html: parseMarkdown(String(msg.content)) }}
+                          />
+                      )
                   )}
                 </div>
               </div>
             ))}
-            {isTyping && (
-              <div className="flex items-start gap-4 max-w-4xl mx-auto justify-start">
-                <div className="max-w-xl">
-                  <p className="text-sm text-gray-400 italic">thinking...</p>
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </>
         )}
@@ -590,115 +628,435 @@ const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, 
 
 const App = () => {
   const [view, setView] = useState(() => localStorage.getItem('view') || 'signin');
-  const [chats, setChats] = useState(() => JSON.parse(localStorage.getItem('chats') || '[]'));
-  const [currentChatId, setCurrentChatId] = useState(() => localStorage.getItem('currentChatId') || null);
+  const [chats, setChats] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const [user, setUser] = useState(null);
+  const [isLoadingChats, setIsLoadingChats] = useState(false);
+  const [encryptionSessions, setEncryptionSessions] = useState({}); // sessionId -> encryption key
 
-  // Save to localStorage whenever state changes
+  // Check for existing token and load user data
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('user');
+
+    if (token && savedUser) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        apiClient.setToken(token);
+        setUser(parsedUser);
+        setView('dashboard');
+        loadChatsFromBackend();
+      } catch (error) {
+        console.error('Error parsing saved user data:', error);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+    }
+  }, []);
+
+  // Authentication success handler
+  const handleAuthSuccess = (token, userData) => {
+    apiClient.setToken(token);
+    setUser(userData);
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    loadChatsFromBackend();
+  };
+
+  // Load chats from backend
+  const loadChatsFromBackend = async () => {
+    try {
+      setIsLoadingChats(true);
+      const fetchedChats = await apiClient.getChats();
+      setChats(fetchedChats);
+    } catch (error) {
+      console.error('Error loading chats:', error);
+      // Handle authentication errors
+      if (error.message.includes('Access token')) {
+        handleSignOut();
+      }
+    } finally {
+      setIsLoadingChats(false);
+    }
+  };
+
+  // Handle sign out
+  const handleSignOut = () => {
+    apiClient.setToken(null);
+    setUser(null);
+    setChats([]);
+    setCurrentChatId(null);
+    setView('signin');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  };
+
+  // Handle account deletion
+  const handleAccountDeletion = async () => {
+    try {
+      console.log('🗑️ [DELETE ACCOUNT] Initiating account deletion');
+
+      // Make sure we have a valid token before proceeding
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('❌ [DELETE ACCOUNT] No authentication token found');
+        alert('Authentication required. Please sign in again.');
+        handleSignOut();
+        return;
+      }
+
+      // Ensure token is set in API client
+      apiClient.setToken(token);
+
+      // Attempt account deletion
+      await apiClient.deleteAccount();
+      console.log('✅ [DELETE ACCOUNT] Account deleted successfully from database');
+
+      // Clear client-side data and redirect (but don't call handleSignOut which clears token too early)
+      apiClient.setToken(null);
+      setUser(null);
+      setChats([]);
+      setCurrentChatId(null);
+      setView('signin');
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+
+      alert('Account deleted successfully. You have been signed out.');
+    } catch (error) {
+      console.error('❌ [DELETE ACCOUNT] Failed to delete account:', error);
+
+      // Provide more specific error messages based on the error type
+      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        alert('Authentication failed. Please sign in again before deleting your account.');
+        handleSignOut();
+      } else if (error.message.includes('404') || error.message.includes('not found')) {
+        alert('Account not found. It may have already been deleted.');
+        handleSignOut();
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        alert('Network error. Please check your connection and try again.');
+      } else {
+        alert('Failed to delete account. Please try again or contact support.');
+      }
+    }
+  };
+
+  // Save view to localStorage
   useEffect(() => {
     localStorage.setItem('view', view);
   }, [view]);
 
-  useEffect(() => {
-    localStorage.setItem('chats', JSON.stringify(chats));
-  }, [chats]);
-
-  useEffect(() => {
-    if (currentChatId) {
-      localStorage.setItem('currentChatId', currentChatId);
-    } else {
-      localStorage.removeItem('currentChatId');
-    }
-  }, [currentChatId]);
-
   const handleUserSubmit = async (userMessage) => {
     let targetChatId = currentChatId;
-    let currentChats = chats; // Get current state from a local variable
-    
+    let currentChats = chats;
+
     // Find the current chat object
     const currentChat = currentChats.find(chat => chat.id === targetChatId);
-    
+
     if (!currentChat) {
-      // Create a new chat if no current chat exists
-      const newId = uuidv4();
+      console.log('🎙️ [NEW CHAT] Creating new encrypted chat on backend');
+
+      // GENERATE ENCRYPTION SESSION FIRST
+      const sessionId = uuidv4(); // Generate session ID for new chat
+      const keyResponse = await encryptionClient.generateKey(sessionId, user.id);
+      const encryptionKey = keyResponse.key;
+
+      // Store key in local state for immediate use
+      setEncryptionSessions(prev => ({
+        ...prev,
+        [sessionId]: encryptionKey
+      }));
+
+      // Create new chat using backend API (always encrypted by default)
       const title = userMessage.split(' ').slice(0, 4).join(' ') || "New Chat";
-      const newChat = {
-        id: newId,
+      const newChat = await apiClient.createChat({
         title,
-        messages: [{ role: 'user', content: userMessage, timestamp: new Date().toISOString() }],
-      };
-      
-      // Add the new chat to the list
+        encrypted: true // All chats are encrypted by default for security
+      });
+
+      // Update chat ID to match our session ID for consistency
+      const actualChatId = newChat.id;
+
+      // Add to local state
       const updatedChats = [newChat, ...currentChats];
       setChats(updatedChats);
-      setCurrentChatId(newId);
-      
-      // Get AI response
-      const aiResponse = await generateAiResponse(userMessage, []);
-      
-      // Update the chat with AI response
-      const finalChats = updatedChats.map(chat =>
-        chat.id === newId
-          ? { 
-              ...chat, 
-              messages: [
-                ...chat.messages,
-                { role: 'ai', content: aiResponse, timestamp: new Date().toISOString() }
-              ]
-            }
-          : chat
+      setCurrentChatId(actualChatId);
+
+      console.log(`🎙️ [NEW CHAT] Created encrypted chat: ${actualChatId}, session: ${sessionId}`);
+
+      // ENCRYPT USER MESSAGE
+      console.log('🔐 [ENCRYPT] Encrypting user message for new chat...');
+      const encryptedUserMessage = await encryptionClient.encrypt(userMessage, sessionId);
+
+      // IMMEDIATELY show user message in UI (with encryption indicator)
+      const newUserMessage = {
+        role: 'user',
+        content: userMessage, // Show plain text in UI
+        timestamp: new Date().toISOString()
+      };
+
+      const thinkingMessage = {
+        role: 'ai',
+        content: null, // Will be replaced with actual response
+        timestamp: new Date().toISOString()
+      };
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === actualChatId ? {
+          ...chat,
+          messages: [newUserMessage, thinkingMessage]
+        } : chat
+      ));
+
+      // Send encrypted message to AI and get encrypted response
+      const aiResponseData = await apiClient.generateAiResponse(
+        {
+          encrypted_data: encryptedUserMessage.encrypted_data,
+          iv: encryptedUserMessage.iv
+        },
+        [], // No context for new chat
+        "openai/gpt-3.5-turbo",
+        true, // encrypted flag
+        sessionId, // session ID for encryption
+        user.id // user ID for database lookup
       );
-      setChats(finalChats);
+
+      // Decrypt AI response for UI display (aiResponseData.response contains encrypted data)
+      const aiResponse = await encryptionClient.decrypt(
+        aiResponseData.response,  // encryptedData
+        aiResponseData.iv,        // iv
+        sessionId                 // sessionId
+      );
+      console.log(`🤖 [AI RESPONSE] Decrypted and got response (${aiResponse.decrypted_data.length} chars)`);
+
+      // Store ENCRYPTED messages in database (backend will only store encrypted data)
+      await apiClient.storeEncryptedMessage(
+        actualChatId,
+        userMessage,
+        encryptedUserMessage.encrypted_data,
+        encryptedUserMessage.iv,
+        sessionId,
+        'user'
+      );
+      await apiClient.storeEncryptedMessage(
+        actualChatId,
+        aiResponse.decrypted_data,
+        aiResponseData.response, // Encrypted AI response from backend
+        aiResponseData.iv,
+        sessionId,
+        'ai'
+      );
+
+      // Replace thinking message with actual DECRYPTED response
+      const actualAIMessage = {
+        role: 'ai',
+        content: aiResponse.decrypted_data,
+        timestamp: new Date().toISOString()
+      };
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === actualChatId ? {
+          ...chat,
+          messages: [newUserMessage, actualAIMessage]
+        } : chat
+      ));
+
+    } else if (currentChat.encrypted) {
+      console.log('🔐 [ENCRYPTED CHAT] Processing encrypted message');
+
+      // Handle encrypted chat
+      const sessionId = currentChat.id; // Use chat ID as session ID
+
+      let encryptionKey = encryptionSessions[sessionId];
+      if (!encryptionKey) {
+        console.log('🔑 [ENCRYPTION] Generating new encryption key for session:', sessionId);
+        // Generate encryption key if not exists - now includes user_id for database storage
+        const keyResponse = await encryptionClient.generateKey(sessionId, user.id);
+        encryptionKey = keyResponse.key;
+
+        setEncryptionSessions(prev => ({
+          ...prev,
+          [sessionId]: encryptionKey
+        }));
+        console.log('✅ [ENCRYPTION] Key generated and stored');
+      }
+
+      // IMMEDIATELY show encrypted user message in UI
+      const encryptedUserMessage = {
+        role: 'user',
+        content: '🔐 ' + userMessage, // Show as encrypted indicator
+        timestamp: new Date().toISOString(),
+        encrypted: true
+      };
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === currentChat.id ? {
+          ...chat,
+          messages: [...(chat.messages || []), encryptedUserMessage, {
+            role: 'ai',
+            content: null, // Thinking placeholder
+            timestamp: new Date().toISOString(),
+            encrypted: true
+          }]
+        } : chat
+      ));
+
+      // Encrypt user message
+      console.log('🔐 [ENCRYPT] Encrypting user message...');
+      const encryptedMessage = await encryptionClient.encrypt(userMessage, sessionId);
+      console.log('✅ [ENCRYPT] Message encrypted successfully');
+
+      // Send encrypted message to backend for processing
+      const aiResponseData = await apiClient.generateAiResponse(
+        {
+          encrypted_data: encryptedMessage.encrypted_data,
+          iv: encryptedMessage.iv
+        },
+        currentChat.messages.map(msg => msg.content),
+        "openai/gpt-3.5-turbo",
+        true, // encrypted flag
+        sessionId, // session ID for encryption
+        user.id // user ID for database lookup
+      );
+
+      // Backend will decrypt, process with AI, encrypt response, and store all in database
+      console.log('✅ [ENCRYPTED CHAT] Response received, updating UI');
+
+      // Replace thinking message with actual (decrypted) response
+      const decryptResult = await encryptionClient.decrypt(
+        aiResponseData.response,  // encryptedData
+        aiResponseData.iv,        // iv
+        sessionId                 // sessionId
+      );
+
+      const finalMessages = [
+        ...currentChat.messages,
+        encryptedUserMessage,
+        {
+          role: 'ai',
+          content: decryptResult.decrypted_data,
+          timestamp: new Date().toISOString(),
+          encrypted: true
+        }
+      ];
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === currentChat.id ? {
+          ...chat,
+          messages: finalMessages
+        } : chat
+      ));
+
     } else {
-      // Update existing chat with user message
-      const updatedChats = currentChats.map(chat =>
-        chat.id === targetChatId
-          ? { 
-              ...chat, 
-              messages: [
-                ...chat.messages,
-                { role: 'user', content: userMessage, timestamp: new Date().toISOString() }
-              ]
-            }
-          : chat
-      );
+      console.log('📝 [UNENCRYPTED CHAT] Processing unencrypted message');
+
+      // IMMEDIATELY show user message in UI with thinking indicator
+      const newUserMessage = {
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date().toISOString()
+      };
+
+      const thinkingMessage = {
+        role: 'ai',
+        content: null, // Will be replaced with actual response
+        timestamp: new Date().toISOString()
+      };
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === currentChat.id ? {
+          ...chat,
+          messages: [...(chat.messages || []), newUserMessage, thinkingMessage]
+        } : chat
+      ));
+
+      // Handle unencrypted chat - normal flow
+      const existingMessages = currentChat.messages || [];
+      const lastMessages = [...existingMessages, newUserMessage]; // Include the new message
+      const contextMessages = lastMessages.slice(-20); // Keep last 20 messages
+
+      // Send to AI
+      const aiResponse = await apiClient.generateAiResponse(userMessage, contextMessages.slice(0, -1)); // Don't send thinking
+      console.log(`🤖 [AI RESPONSE] Got response (${aiResponse.length} chars)`);
+
+      // Store both messages in database
+      await apiClient.storeEncryptedMessage(currentChat.id, userMessage, userMessage, '', 'plaintext', 'user');
+      await apiClient.storeEncryptedMessage(currentChat.id, aiResponse, aiResponse, '', 'plaintext', 'ai');
+
+      // Replace thinking message with actual AI response
+      const actualAIMessage = {
+        role: 'ai',
+        content: aiResponse,
+        timestamp: new Date().toISOString()
+      };
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === currentChat.id ? {
+          ...chat,
+          messages: [
+            ...chat.messages.slice(0, -1), // Remove thinking message
+            actualAIMessage // Add actual response
+          ]
+        } : chat
+      ));
+
+      console.log('✅ [UNENCRYPTED CHAT] Messages stored and UI updated');
+    }
+  };
+
+
+  const deleteChat = async (idToDelete) => {
+    console.log(`🗑️ [DELETE CHAT] Deleting chat: ${idToDelete}`);
+    try {
+      await apiClient.deleteChat(idToDelete);
+      console.log(`✅ [DELETE CHAT] Chat deleted successfully: ${idToDelete}`);
+
+      const updatedChats = chats.filter(chat => chat.id !== idToDelete);
       setChats(updatedChats);
-      
-      // Get the updated messages for the API call
-      const updatedMessages = updatedChats.find(chat => chat.id === targetChatId).messages;
-      
-      // Get AI response
-      const aiResponse = await generateAiResponse(userMessage, updatedMessages);
-      
-      // Update chat with AI response
-      const finalChats = updatedChats.map(chat =>
-        chat.id === targetChatId
-          ? { 
-              ...chat, 
-              messages: [
-                ...chat.messages,
-                { role: 'ai', content: aiResponse, timestamp: new Date().toISOString() }
-              ]
-            }
-          : chat
-      );
-      setChats(finalChats);
+
+      if (currentChatId === idToDelete) {
+        setCurrentChatId(null); // Go back to the "new chat" screen
+      }
+    } catch (error) {
+      console.error(`❌ [DELETE CHAT] Failed to delete chat: ${error.message}`);
+      // Still remove from local state even if backend fails
+      const updatedChats = chats.filter(chat => chat.id !== idToDelete);
+      setChats(updatedChats);
+      if (currentChatId === idToDelete) {
+        setCurrentChatId(null);
+      }
     }
   };
 
+  const deleteAllChats = async () => {
+    console.log(`🗑️ [DELETE ALL CHATS] Deleting all user chats`);
+    try {
+      await apiClient.deleteAllChats();
+      console.log(`✅ [DELETE ALL CHATS] All chats deleted successfully`);
 
-  const deleteChat = (idToDelete) => {
-    const updatedChats = chats.filter(chat => chat.id !== idToDelete);
-    setChats(updatedChats);
-
-    if (currentChatId === idToDelete) {
-      setCurrentChatId(null); // Go back to the "new chat" screen
+      setChats([]);
+      setCurrentChatId(null);
+    } catch (error) {
+      console.error(`❌ [DELETE ALL CHATS] Failed to delete chats: ${error.message}`);
+      // Still clear local state
+      setChats([]);
+      setCurrentChatId(null);
     }
   };
 
-  const deleteAllChats = () => {
-    setChats([]);
-    setCurrentChatId(null);
+  const updateChat = async (id, newTitle) => {
+    console.log(`✏️ [UPDATE CHAT] Updating chat ${id} to title: "${newTitle}"`);
+    try {
+      await apiClient.updateChat(id, { title: newTitle });
+      console.log(`✅ [UPDATE CHAT] Chat title updated successfully: ${id}`);
+
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === id ? { ...chat, title: newTitle } : chat
+      ));
+    } catch (error) {
+      console.error(`❌ [UPDATE CHAT] Failed to update chat: ${error.message}`);
+      // Don't update local state if backend fails
+    }
   };
 
   // 1. Request to delete/action (opens the confirmation modal)
@@ -723,9 +1081,7 @@ const App = () => {
 
     switch (confirmation.type) {
       case 'account':
-        setChats([]);
-        setCurrentChatId(null);
-        setView('signin');
+        handleAccountDeletion();
         break;
       case 'chat':
         deleteChat(confirmation.id);
@@ -734,9 +1090,7 @@ const App = () => {
         deleteAllChats();
         break;
       case 'signout':
-        // Reset state and go to sign in page
-        // Keeping chat state for simulation, but a real app would clear this
-        setView('signin');
+        handleSignOut();
         break;
     }
     setConfirmation(null); // Close modal
@@ -745,12 +1099,13 @@ const App = () => {
   const renderContent = () => {
     switch (view) {
       case 'signup':
-        return <SignUpPage setView={setView} />;
+        return <SignUpPage setView={setView} onAuthSuccess={handleAuthSuccess} />;
       case 'signin':
-        return <SignInPage setView={setView} />;
+        return <SignInPage setView={setView} onAuthSuccess={handleAuthSuccess} />;
       case 'dashboard':
         return (
           <Dashboard
+            user={user}
             setView={setView}
             chats={chats}
             setChats={setChats}
@@ -758,10 +1113,12 @@ const App = () => {
             setCurrentChatId={setCurrentChatId}
             handleDeleteRequest={handleDeleteRequest}
             handleUserSubmit={handleUserSubmit}
+            isLoadingChats={isLoadingChats}
+            loadChatsFromBackend={loadChatsFromBackend}
           />
         );
       default:
-        return <SignInPage setView={setView} />;
+        return <SignInPage setView={setView} onAuthSuccess={handleAuthSuccess} />;
     }
   };
 
