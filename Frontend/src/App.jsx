@@ -1,115 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { User, LogOut, Plus, Trash2, Pencil, Eye, EyeOff, Lock, X, AlertTriangle, Menu, ArrowUp, MoreHorizontal, Copy } from 'lucide-react';
-import logo from './assets/logo.png';
-
-// Utility: Simulate UUID generation
-const uuidv4 = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-// --- SIMULATED DATA & LOGIC ---
-
-// Simple password strength check simulation
-const getPasswordStrength = (password) => {
-  if (password.length < 6) return { text: "Too Short", color: "text-red-400" };
-  if (password.length < 10) return { text: "Weak", color: "text-yellow-400" };
-  if (/[A-Z]/.test(password) && /\d]/.test(password) && /[!@#$%^&*]/.test(password)) {
-    return { text: "Strong", color: "text-green-400" };
-  }
-  return { text: "Moderate", color: "text-blue-400" };
-};
-
-// --- GEMINI API INTEGRATION ---
-// IMPORTANT: In a real-world application, this API key should be stored securely in an environment variable on the server-side.
-// Exposing it on the client-side like this is insecure and only for demonstration purposes.
-const API_KEY = "AIzaSyC_NgFyTbBN3OGDOjaJpBcRzLGuFVMUG5Q";
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
-
-const generateAiResponse = async (userMessage, chatHistory) => {
-  try {
-    // Format chat history for the Gemini API. The API expects a specific role format ('model' for AI, 'user' for user).
-    const contents = [
-      ...chatHistory.map(msg => ({
-        role: msg.role === 'ai' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      })),
-       // The user message is already in the history, so no need to add it again
-    ];
-
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ contents }),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.json();
-      console.error("API Error Response:", errorBody);
-      throw new Error(`API request failed with status ${response.status}. See console for details.`);
-    }
-
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!text) {
-      return "Sorry, I couldn't generate a valid response. The model may have returned empty content.";
-    }
-    return text;
-
-  } catch (error) {
-    console.error("Error calling Gemini API:", error);
-    return `There was an error connecting to the AI. Please check the console and ensure your API key is valid and has the necessary permissions. \n\n**Error:** ${error.message}`;
-  }
-};
-
-// --- MARKDOWN PARSER ---
-const parseMarkdown = (text) => {
-  // First, split by code blocks to isolate them from other markdown parsing
-  const parts = text.split(/(```[\s\S]*?```)/g);
-
-  const processedParts = parts.map(part => {
-    // If the part is a code block, format it as a styled container
-    if (part.startsWith('```')) {
-      const lang = part.match(/```(\w*)/)?.[1] || 'code';
-      const code = part.replace(/```\w*\n?/, '').replace(/```$/, '');
-      const escapedCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      
-      const copyIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
-
-      return `
-        <div class="code-block-container bg-gray-800 rounded-lg overflow-hidden my-4 border border-gray-600 shadow-sm">
-          <div class="code-header px-4 py-3 flex justify-between items-center text-xs bg-gray-850 border-b border-gray-600">
-            <span class="text-gray-300 font-medium">${lang}</span>
-            <button class="copy-code-btn flex items-center gap-1.5 text-gray-400 hover:text-gray-200 transition-colors bg-transparent border-none cursor-pointer p-1 rounded">
-              ${copyIconSVG}
-              <span class="copy-text text-xs font-medium">Copy code</span>
-            </button>
-          </div>
-          <pre class="p-4 overflow-x-auto text-sm leading-6 bg-gray-850"><code class="language-${lang} font-mono text-gray-100">${escapedCode.trim()}</code></pre>
-        </div>
-      `;
-    }
-
-    // For non-code parts, apply other markdown rules
-    let html = part
-      .replace(/^### (.*$)/gim, '<h3 class="text-xl font-semibold my-3 text-white">$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2 class="text-2xl font-semibold my-3 text-white">$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1 class="text-3xl font-semibold my-3 text-white">$1</h1>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code class="bg-gray-700 text-red-300 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
-      .replace(/\n/g, '<br />');
-
-    return html;
-  });
-
-  return processedParts.join('');
-};
+import { useState, useEffect, useRef } from 'react';
+import { FiUser, FiLogOut, FiPlus, FiTrash2, FiEdit3, FiEye, FiEyeOff, FiLock, FiX, FiAlertTriangle, FiMenu, FiArrowUp, FiMoreHorizontal, FiSettings } from 'react-icons/fi';
+import { RiDeleteBin6Line } from 'react-icons/ri';
+import { IoWarningOutline } from 'react-icons/io5';
+import { uuidv4 } from './utils/uuid';
+import { getPasswordStrength } from './utils/password';
+import { generateAiResponse } from './utils/api';
+import { parseMarkdown } from './utils/markdown';
 
 
 // --- UI COMPONENTS ---
@@ -162,7 +58,7 @@ const InputField = ({ label, type, value, onChange, placeholder, isPassword = fa
             onClick={() => setShowPassword(!showPassword)}
             aria-label={showPassword ? "Hide password" : "Show password"}
           >
-            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
           </button>
         )}
       </div>
@@ -286,19 +182,41 @@ const ConfirmationModal = ({ confirmation, onConfirm, onCancel }) => {
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 p-6 rounded-xl shadow-2xl max-w-sm w-full transform transition-all border border-gray-700">
-        <div className="flex flex-col items-center text-center">
-          {(danger || confirmation.type === 'signout') ? <AlertTriangle size={36} className={`mb-4 ${danger ? 'text-red-500' : 'text-yellow-500'}`} /> : null}
-          <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-          <p className="text-sm text-gray-300 mb-6">{message}</p>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+      <div className="bg-zinc-900/95 border border-zinc-700/50 rounded-xl shadow-2xl max-w-sm w-full backdrop-blur-sm p-6">
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            {danger ? (
+              <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center">
+                <RiDeleteBin6Line className="w-4 h-4 text-red-400" />
+              </div>
+            ) : confirmation.type === 'signout' ? (
+              <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <FiLogOut className="w-4 h-4 text-blue-400" />
+              </div>
+            ) : null}
+            <h3 className="text-lg font-semibold text-white">{title}</h3>
+          </div>
+          <p className="text-sm text-zinc-300 mb-6 leading-relaxed">{message}</p>
         </div>
 
-        <div className="flex justify-between space-x-3">
-          <Button onClick={onCancel} variant="secondary" className="flex-1">Cancel</Button>
-          <Button onClick={onConfirm} variant={danger ? 'danger' : 'primary'} className="flex-1">
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors cursor-pointer ${
+              danger 
+                ? 'text-white bg-red-600 hover:bg-red-700' 
+                : 'text-white bg-blue-600 hover:bg-blue-700'
+            }`}
+          >
             {confirmText}
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -308,28 +226,40 @@ const ConfirmationModal = ({ confirmation, onConfirm, onCancel }) => {
 
 const SettingsModal = ({ setView, handleDeleteAccountRequest }) => {
   return (
-    <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-40 p-4">
-      <div className="bg-gray-900 p-6 rounded-xl shadow-2xl max-w-lg w-full border border-gray-700">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-white">User Settings</h3>
-          <button onClick={() => setView('dashboard')} className="text-gray-400 hover:text-white cursor-pointer">
-            <X size={24} />
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-40 p-4">
+      <div className="bg-zinc-900/95 border border-zinc-700/50 rounded-xl shadow-2xl max-w-md w-full backdrop-blur-sm">
+        <div className="flex items-center justify-between p-6 border-b border-zinc-700/50">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center">
+              <FiSettings className="w-4 h-4 text-zinc-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-white">Settings</h3>
+          </div>
+          <button 
+            onClick={() => setView('dashboard')} 
+            className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <FiX className="w-4 h-4 text-zinc-400" />
           </button>
         </div>
 
-        <div className="space-y-4">
-          <p className="text-gray-300">Manage your profile information and account preferences here.</p>
-
-          <div className="border-t border-gray-700 pt-4">
-            <h4 className="text-lg font-semibold text-red-500 mb-2">Danger Zone</h4>
-            <p className="text-sm text-gray-400 mb-4">Permanently delete your account and all associated chat data. This action cannot be undone.</p>
-            <Button
+        <div className="p-6 space-y-6">
+          <div>
+            <p className="text-sm text-zinc-300">Manage your account and preferences</p>
+          </div>
+          
+          <div className="border border-red-500/20 bg-red-500/5 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <RiDeleteBin6Line className="w-4 h-4 text-red-400" />
+              <h4 className="text-sm font-medium text-red-400">Danger Zone</h4>
+            </div>
+            <p className="text-xs text-zinc-400 mb-4">This will permanently delete your account and all chat data. This cannot be undone.</p>
+            <button
               onClick={handleDeleteAccountRequest}
-              variant="danger"
-              className="font-semibold"
+              className="px-3 py-2 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer"
             >
               Delete Account
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -364,23 +294,27 @@ const UserProfileMenu = ({ setView, handleDeleteRequest }) => {
             </div>
             <span className="text-sm font-medium text-white">Anonymous User</span>
         </div>
-        <MoreHorizontal size={18} className="text-gray-400" />
+        <FiMoreHorizontal size={18} className="text-gray-400" />
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full mb-2 w-full bg-gray-800 rounded-lg shadow-xl py-2 z-20 border border-gray-700">
-          <button 
-            onClick={() => { setView('settings'); setIsOpen(false); }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center"
-          >
-            <User size={16} className="mr-2"/> Settings
-          </button>
-          <button 
-            onClick={() => { handleDeleteRequest('signout'); setIsOpen(false); }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center"
-          >
-            <LogOut size={16} className="mr-2"/> Sign Out
-          </button>
+        <div className="absolute bottom-full mb-2 w-full bg-zinc-900/95 border border-zinc-700/50 rounded-lg shadow-xl backdrop-blur-sm z-20">
+          <div className="p-1">
+            <button 
+              onClick={() => { setView('settings'); setIsOpen(false); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-200 hover:bg-zinc-800 rounded-md transition-colors cursor-pointer"
+            >
+              <FiSettings className="w-4 h-4" />
+              Settings
+            </button>
+            <button 
+              onClick={() => { handleDeleteRequest('signout'); setIsOpen(false); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-200 hover:bg-zinc-800 rounded-md transition-colors cursor-pointer"
+            >
+              <FiLogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -408,14 +342,14 @@ const PastChatsList = ({ chats, currentChatId, setCurrentChatId, createNewChat, 
     <div className="flex flex-col h-full bg-black text-gray-200">
       <div className="p-4 flex-shrink-0 flex items-center gap-3 border-b border-gray-800">
         <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center">
-            <User size={22} className="text-white"/>
+            <FiUser size={22} className="text-white"/>
         </div>
         <h1 className="text-lg font-semibold text-white">Secure AI</h1>
       </div>
       <div className="p-2 flex-shrink-0">
         <button onClick={createNewChat} className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer">
           <span className="text-sm font-medium">New Chat</span>
-          <Plus size={18} />
+          <FiPlus size={18} />
         </button>
       </div>
 
@@ -448,14 +382,14 @@ const PastChatsList = ({ chats, currentChatId, setCurrentChatId, createNewChat, 
                 className="p-1 hover:text-white cursor-pointer"
                 aria-label="Rename Chat"
               >
-                <Pencil size={14} />
+                <FiEdit3 size={14} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDeleteRequest('chat', chat.id, chat.title); }}
                 className="p-1 hover:text-red-400 cursor-pointer"
                 aria-label="Delete Chat"
               >
-                <Trash2 size={14} />
+                <FiTrash2 size={14} />
               </button>
             </div>
           </div>
@@ -496,58 +430,7 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
     }
   }, [currentChat?.messages]);
 
-  // Handle copy functionality
-  const handleCopyMessage = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      // Could add toast notification here if implemented
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-    }
-  };
 
-  // Effect for handling copy button clicks via event delegation
-  useEffect(() => {
-    const container = chatContainerRef.current;
-    if (!container) return;
-
-    const handleCopyClick = (e) => {
-        const button = e.target.closest('.copy-code-btn');
-        if (button) {
-            const container = button.closest('.code-block-container');
-            const pre = container?.querySelector('pre');
-            if (pre) {
-                navigator.clipboard.writeText(pre.innerText)
-                  .then(() => {
-                      const copyText = button.querySelector('.copy-text');
-                      if (copyText) {
-                        copyText.textContent = 'Copied!';
-                        setTimeout(() => {
-                          copyText.textContent = 'Copy';
-                        }, 2000);
-                      }
-                  })
-                  .catch(err => console.error('Failed to copy text: ', err));
-            }
-        }
-
-        // Handle message copy buttons
-        const copyMessageBtn = e.target.closest('.copy-message-btn');
-        if (copyMessageBtn) {
-          const messageElement = copyMessageBtn.closest('.message-container');
-          if (messageElement) {
-            const text = messageElement.getAttribute('data-message-text');
-            handleCopyMessage(text);
-          }
-        }
-    };
-
-    container.addEventListener('click', handleCopyClick);
-
-    return () => {
-        container.removeEventListener('click', handleCopyClick);
-    };
-  }, []);
 
 
   const handleSubmit = async (e) => {
@@ -571,7 +454,7 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
         {isNewChat ? (
            <div className="flex h-full flex-col items-center justify-center text-center">
              <div className="w-16 h-16 rounded-full bg-gray-950 flex items-center justify-center mb-4 border-2 border-gray-700">
-                <User size={32} className="text-white"/>
+                <FiUser size={32} className="text-white"/>
             </div>
             <h2 className="text-2xl font-semibold text-gray-300">Ready when you are.</h2>
           </div>
@@ -579,38 +462,18 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
           <>
             {currentChat.messages.map((msg, index) => (
               <div key={index} className={`flex items-start gap-4 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.role === 'user' && (
-                  <button
-                    className="copy-message-btn flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-2 text-gray-400 hover:text-white cursor-pointer"
-                    onClick={() => handleCopyMessage(msg.content)}
-                    aria-label="Copy message"
-                    style={{ marginTop: '4px' }}
-                  >
-                    <Copy size={16} />
-                  </button>
-                )}
                 <div
-                  className={`message-container max-w-2xl text-white ${
+                  className={`text-white ${
                     msg.role === 'user'
-                      ? 'bg-gray-800 p-3 rounded-xl group'
-                      : 'group relative'
+                      ? 'max-w-2xl bg-gray-800 p-3 rounded-xl'
+                      : 'max-w-4xl'
                   }`}
-                  data-message-text={msg.content}
                 >
-                  {msg.role === 'ai' && (
-                    <button
-                      className="copy-message-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded cursor-pointer"
-                      onClick={() => handleCopyMessage(msg.content)}
-                      aria-label="Copy message"
-                    >
-                      <Copy size={14} />
-                    </button>
-                  )}
                   {msg.role === 'user' ? (
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                   ) : (
                       <div
-                          className="text-base leading-relaxed whitespace-pre-wrap"
+                          className="text-md leading-relaxed whitespace-pre-wrap"
                           dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
                       />
                   )}
@@ -645,21 +508,21 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
                 }
             }}
             placeholder="Ask anything..."
-            className="flex-grow w-full pl-4 pr-12 py-3 bg-transparent focus:outline-none text-sm text-white resize-none overflow-y-auto scrollbar-hide"
+            className="flex-grow w-full pl-4 pr-16 py-4 bg-transparent focus:outline-none text-sm text-white resize-none overflow-y-auto scrollbar-hide"
             rows="1"
             disabled={isTyping}
-            style={{maxHeight: '200px'}}
+            style={{minHeight: '60px', maxHeight: '200px', cursor: isTyping ? 'not-allowed' : 'text'}}
           />
           <button
             type="submit"
-            className={`absolute right-3 bottom-2 p-2 rounded-full transition-colors  ${
+            className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition-colors cursor-pointer ${
                 (inputText.trim() && !isTyping)
                 ? 'bg-white text-black'
                 : 'bg-gray-700 text-white'
             } disabled:bg-gray-800 disabled:cursor-not-allowed`}
             disabled={inputText.trim() === '' || isTyping}
           >
-            <ArrowUp size={18} />
+            <FiArrowUp size={18} />
           </button>
         </form>
       </div>
@@ -702,12 +565,12 @@ const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, 
          {/* Top bar inside main content */}
          <div className="flex items-center p-2 border-b border-gray-800 bg-black flex-shrink-0">
              <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer" aria-label="Toggle Sidebar">
-                 <Menu size={20} />
+                 <FiMenu size={20} />
              </button>
              <h2 className="text-sm font-medium text-white ml-2">{currentChat?.title || 'New Chat'}</h2>
              {currentChat && (
                 <div className="ml-auto relative flex items-center group">
-                    <Lock size={16} className={`${currentChat.encrypted ? 'text-blue-400' : 'text-yellow-400'}`} />
+                    <FiLock size={16} className={`${currentChat.encrypted ? 'text-blue-400' : 'text-yellow-400'}`} />
                     <div className="absolute top-full mt-3 right-0 w-max max-w-xs p-2 text-xs text-white bg-gray-950 rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50 border border-gray-700">
                         {currentChat.encrypted ? 'Secure Session: AES-256' : 'Standard Session'}
                     </div>
@@ -726,50 +589,101 @@ const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, 
 // --- MAIN APP COMPONENT ---
 
 const App = () => {
-  const [view, setView] = useState('signin'); // 'signin', 'signup', 'dashboard', 'settings'
-  const [chats, setChats] = useState([]);
-  const [currentChatId, setCurrentChatId] = useState(null);
-  const [confirmation, setConfirmation] = useState(null); // { type: 'chat', id: 'uuid', title: '...' } | { type: 'all_chats' } | { type: 'account' } | { type: 'signout' }
+  const [view, setView] = useState(() => localStorage.getItem('view') || 'signin');
+  const [chats, setChats] = useState(() => JSON.parse(localStorage.getItem('chats') || '[]'));
+  const [currentChatId, setCurrentChatId] = useState(() => localStorage.getItem('currentChatId') || null);
+  const [confirmation, setConfirmation] = useState(null);
+
+  // Save to localStorage whenever state changes
+  useEffect(() => {
+    localStorage.setItem('view', view);
+  }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem('chats', JSON.stringify(chats));
+  }, [chats]);
+
+  useEffect(() => {
+    if (currentChatId) {
+      localStorage.setItem('currentChatId', currentChatId);
+    } else {
+      localStorage.removeItem('currentChatId');
+    }
+  }, [currentChatId]);
 
   const handleUserSubmit = async (userMessage) => {
     let targetChatId = currentChatId;
-    let historyForApi;
     let currentChats = chats; // Get current state from a local variable
-
-    if (!targetChatId) { // This is the first message in a new chat session
-        const newId = uuidv4();
-        const title = userMessage.split(' ').slice(0, 4).join(' ') || "New Chat";
-        const newChat = {
-            id: newId,
-            title,
-            encrypted: true,
-            messages: [{ role: 'user', content: userMessage }],
-        };
-        const updatedChats = [newChat, ...currentChats];
-        setChats(updatedChats);
-        setCurrentChatId(newId);
-        
-        targetChatId = newId;
-        historyForApi = newChat.messages;
-    } else { // This is a message in an existing chat
-        const updatedChats = currentChats.map(chat =>
-            chat.id === targetChatId
-                ? { ...chat, messages: [...chat.messages, { role: 'user', content: userMessage }] }
-                : chat
-        );
-        setChats(updatedChats);
-        historyForApi = updatedChats.find(c => c.id === targetChatId).messages;
-    }
-
-    // Now, call the API
-    const aiResponse = await generateAiResponse(userMessage, historyForApi);
-
-    // Add the AI response to the correct chat
-    setChats(prevChats => prevChats.map(chat =>
+    
+    // Find the current chat object
+    const currentChat = currentChats.find(chat => chat.id === targetChatId);
+    
+    if (!currentChat) {
+      // Create a new chat if no current chat exists
+      const newId = uuidv4();
+      const title = userMessage.split(' ').slice(0, 4).join(' ') || "New Chat";
+      const newChat = {
+        id: newId,
+        title,
+        messages: [{ role: 'user', content: userMessage, timestamp: new Date().toISOString() }],
+      };
+      
+      // Add the new chat to the list
+      const updatedChats = [newChat, ...currentChats];
+      setChats(updatedChats);
+      setCurrentChatId(newId);
+      
+      // Get AI response
+      const aiResponse = await generateAiResponse(userMessage, []);
+      
+      // Update the chat with AI response
+      const finalChats = updatedChats.map(chat =>
+        chat.id === newId
+          ? { 
+              ...chat, 
+              messages: [
+                ...chat.messages,
+                { role: 'ai', content: aiResponse, timestamp: new Date().toISOString() }
+              ]
+            }
+          : chat
+      );
+      setChats(finalChats);
+    } else {
+      // Update existing chat with user message
+      const updatedChats = currentChats.map(chat =>
         chat.id === targetChatId
-            ? { ...chat, messages: [...chat.messages, { role: 'ai', content: aiResponse }] }
-            : chat
-    ));
+          ? { 
+              ...chat, 
+              messages: [
+                ...chat.messages,
+                { role: 'user', content: userMessage, timestamp: new Date().toISOString() }
+              ]
+            }
+          : chat
+      );
+      setChats(updatedChats);
+      
+      // Get the updated messages for the API call
+      const updatedMessages = updatedChats.find(chat => chat.id === targetChatId).messages;
+      
+      // Get AI response
+      const aiResponse = await generateAiResponse(userMessage, updatedMessages);
+      
+      // Update chat with AI response
+      const finalChats = updatedChats.map(chat =>
+        chat.id === targetChatId
+          ? { 
+              ...chat, 
+              messages: [
+                ...chat.messages,
+                { role: 'ai', content: aiResponse, timestamp: new Date().toISOString() }
+              ]
+            }
+          : chat
+      );
+      setChats(finalChats);
+    }
   };
 
 
@@ -835,15 +749,17 @@ const App = () => {
       case 'signin':
         return <SignInPage setView={setView} />;
       case 'dashboard':
-        return <Dashboard
-          setView={setView}
-          chats={chats}
-          setChats={setChats}
-          currentChatId={currentChatId}
-          setCurrentChatId={setCurrentChatId}
-          handleDeleteRequest={handleDeleteRequest}
-          handleUserSubmit={handleUserSubmit}
-        />;
+        return (
+          <Dashboard
+            setView={setView}
+            chats={chats}
+            setChats={setChats}
+            currentChatId={currentChatId}
+            setCurrentChatId={setCurrentChatId}
+            handleDeleteRequest={handleDeleteRequest}
+            handleUserSubmit={handleUserSubmit}
+          />
+        );
       default:
         return <SignInPage setView={setView} />;
     }
