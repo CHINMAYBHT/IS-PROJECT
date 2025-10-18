@@ -1,13 +1,21 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import padding
-import os
 import base64
+from Crypto.Random import get_random_bytes
 import mysql.connector
 import json
 from datetime import datetime
+from AES import AESCipher
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Environment variables
+DB_HOST = os.environ['DB_HOST']
+DB_USER = os.environ['DB_USER']
+DB_PASS = os.environ['DB_PASS']
+DB_NAME = os.environ['DB_NAME']
 
 app = Flask(__name__)
 CORS(app)
@@ -18,10 +26,10 @@ print('')
 
 # Database configuration (same as main app)
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '11022006Chin#',
-    'database': 'Chat_Encryption'
+    'host': DB_HOST,
+    'user': DB_USER,
+    'password': DB_PASS,
+    'database': DB_NAME
 }
 
 def get_db_connection():
@@ -34,31 +42,20 @@ def get_db_connection():
 
 # AES-256 encryption/decryption functions
 def generate_key():
-    return os.urandom(32)  # 256-bit key
+    return get_random_bytes(32)  # 256-bit key
 
 def encrypt_message(message: str, key: bytes) -> dict:
     """Encrypt a message using AES-256-CBC"""
     try:
-        # Generate a random IV
-        iv = os.urandom(16)
-
-        # Pad the message
-        padder = padding.PKCS7(algorithms.AES.block_size).padder()
-        padded_data = padder.update(message.encode('utf-8')) + padder.finalize()
-
-        # Create cipher
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        encryptor = cipher.encryptor()
-
-        # Encrypt
-        encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
-
-        # Encode for JSON transmission
-        encrypted_b64 = base64.b64encode(encrypted_data).decode('utf-8')
-        iv_b64 = base64.b64encode(iv).decode('utf-8')
+        cipher = AESCipher(key)
+        encrypted_combined = cipher.encrypt(message)
+        
+        # Extract IV and encrypted data from combined result
+        iv_b64 = base64.b64encode(encrypted_combined[:16]).decode('utf-8')
+        encrypted_data_b64 = base64.b64encode(encrypted_combined[16:]).decode('utf-8')
 
         return {
-            'encrypted_data': encrypted_b64,
+            'encrypted_data': encrypted_data_b64,
             'iv': iv_b64,
             'success': True
         }
@@ -75,19 +72,14 @@ def decrypt_message(encrypted_data: str, iv: str, key: bytes) -> dict:
         encrypted_bytes = base64.b64decode(encrypted_data)
         iv_bytes = base64.b64decode(iv)
 
-        # Create cipher
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv_bytes), backend=default_backend())
-        decryptor = cipher.decryptor()
+        # Recombine IV and encrypted data
+        combined = iv_bytes + encrypted_bytes
 
-        # Decrypt
-        padded_data = decryptor.update(encrypted_bytes) + decryptor.finalize()
-
-        # Unpad
-        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-        data = unpadder.update(padded_data) + unpadder.finalize()
+        cipher = AESCipher(key)
+        decrypted_message = cipher.decrypt(combined)
 
         return {
-            'decrypted_data': data.decode('utf-8'),
+            'decrypted_data': decrypted_message,
             'success': True
         }
     except Exception as e:
@@ -205,12 +197,19 @@ def decrypt_data():
     encrypted_data = data['encrypted_data']
     iv = data['iv']
 
+    # Check if key is in memory, otherwise load from database
     if session_id not in encryption_keys:
-        print(f'❌ [DECRYPT] Invalid session: {session_id}')
-        return jsonify({'success': False, 'error': 'Invalid session'}), 401
+        print(f'🔑 [DECRYPT] Session {session_id} not in memory, loading from database...')
+        key = load_session_key(session_id)
+        if not key:
+            print(f'❌ [DECRYPT] Session key not found in database: {session_id}')
+            return jsonify({'success': False, 'error': 'Invalid session'}), 401
+        encryption_keys[session_id] = key
+        print(f'✅ [DECRYPT] Loaded key for session: {session_id}')
+    else:
+        key = encryption_keys[session_id]
 
     print(f'🔓 [DECRYPT] Decrypting data ({len(encrypted_data)} chars) for session: {session_id}')
-    key = encryption_keys[session_id]
     result = decrypt_message(encrypted_data, iv, key)
 
     if result['success']:
@@ -219,6 +218,37 @@ def decrypt_data():
     else:
         print(f'❌ [DECRYPT] Decryption failed: {result["error"]}')
         return jsonify(result), 500
+
+
+def load_session_key(session_id):
+    """Load session key from database"""
+    conn = get_db_connection()
+    if not conn:
+        return None
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT session_data FROM sessions WHERE id = %s",
+            (session_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        import json
+        session_data = json.loads(row[0])
+        key_b64 = session_data.get('encryption_key')
+        if key_b64:
+            import base64
+            key = base64.b64decode(key_b64)
+            return key
+        return None
+    except Exception as e:
+        print(f'❌ [LOAD SESSION KEY] Database error: {e}')
+        return None
+    finally:
+        conn.close()
 
 @app.route('/api/encryption/health', methods=['GET'])
 def health_check():

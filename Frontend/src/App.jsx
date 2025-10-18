@@ -486,7 +486,7 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
     setIsTyping(false);
   };
 
-  const isNewChat = !currentChat;
+  const isNewChat = !currentChat || !currentChat.messages || currentChat.messages.length === 0;
 
   return (
     <div className="flex flex-col h-full bg-black">
@@ -569,18 +569,12 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
 };
 
 
-const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, handleDeleteRequest, handleUserSubmit }) => {
+const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, handleDeleteRequest, handleUserSubmit, updateChat }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const currentChat = chats.find(c => c.id === currentChatId);
 
   const createNewChat = () => {
     setCurrentChatId(null);
-  };
-
-  const updateChat = (id, newTitle) => {
-    setChats(prevChats => prevChats.map(chat =>
-      chat.id === id ? { ...chat, title: newTitle } : chat
-    ));
   };
 
   return (
@@ -681,6 +675,54 @@ const App = () => {
     }
   };
 
+  // Load messages for a specific chat
+  const loadMessagesForChat = async (chatId) => {
+    try {
+      const fetchedMessages = await apiClient.getEncryptedMessages(chatId);
+      // Decrypt messages if needed
+      const chat = chats.find(c => c.id === chatId);
+      let processedMessages = fetchedMessages;
+
+      if (chat && chat.encrypted) {
+        processedMessages = await Promise.all(
+          fetchedMessages.map(async (msg) => {
+            if (msg.encryptedMessage && msg.iv && msg.sessionId) {
+              try {
+                // Decrypt the message
+                const decrypted = await encryptionClient.decrypt(msg.encryptedMessage, msg.iv, msg.sessionId);
+                return {
+                  ...msg,
+                  content: decrypted.decrypted_data
+                };
+              } catch (decryptError) {
+                console.error(`Error decrypting message ${msg.id}:`, decryptError);
+                // Fall back to showing encrypted indicator
+                return {
+                  ...msg,
+                  content: '[⚠️ Encrypted message - unable to decrypt]'
+                };
+              }
+            } else {
+              // Message is not fully encrypted or corrupted, show placeholder
+              return {
+                ...msg,
+                content: '[⚠️ Message data incomplete]'
+              };
+            }
+          })
+        );
+      }
+
+      // Update the chat with loaded messages
+      setChats(prevChats => prevChats.map(chat =>
+        chat.id === chatId ? { ...chat, messages: processedMessages } : chat
+      ));
+
+    } catch (error) {
+      console.error(`Error loading messages for chat ${chatId}:`, error);
+    }
+  };
+
   // Handle sign out
   const handleSignOut = () => {
     apiClient.setToken(null);
@@ -745,6 +787,16 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('view', view);
   }, [view]);
+
+  // Load messages when a chat is selected
+  useEffect(() => {
+    if (currentChatId && chats.length > 0) {
+      const chat = chats.find(c => c.id === currentChatId);
+      if (chat && !chat.messages) {
+        loadMessagesForChat(currentChatId);
+      }
+    }
+  }, [currentChatId, chats]);
 
   const handleUserSubmit = async (userMessage) => {
     let targetChatId = currentChatId;
@@ -884,7 +936,7 @@ const App = () => {
       // IMMEDIATELY show encrypted user message in UI
       const encryptedUserMessage = {
         role: 'user',
-        content: '🔐 ' + userMessage, // Show as encrypted indicator
+        content:userMessage,
         timestamp: new Date().toISOString(),
         encrypted: true
       };
@@ -907,12 +959,21 @@ const App = () => {
       console.log('✅ [ENCRYPT] Message encrypted successfully');
 
       // Send encrypted message to backend for processing
+      // Exclude temporary UI messages and ensure content is not null/undefined
+      const contextMessages = currentChat.messages
+        .filter(msg =>
+          msg.content &&
+          !msg.content.startsWith('🔐 ') &&
+          typeof msg.content === 'string'
+        )
+        .map(msg => msg.content);
+
       const aiResponseData = await apiClient.generateAiResponse(
         {
           encrypted_data: encryptedMessage.encrypted_data,
           iv: encryptedMessage.iv
         },
-        currentChat.messages.map(msg => msg.content),
+        contextMessages,
         "openai/gpt-3.5-turbo",
         true, // encrypted flag
         sessionId, // session ID for encryption
@@ -922,19 +983,26 @@ const App = () => {
       // Backend will decrypt, process with AI, encrypt response, and store all in database
       console.log('✅ [ENCRYPTED CHAT] Response received, updating UI');
 
-      // Replace thinking message with actual (decrypted) response
-      const decryptResult = await encryptionClient.decrypt(
-        aiResponseData.response,  // encryptedData
-        aiResponseData.iv,        // iv
-        sessionId                 // sessionId
-      );
+      let aiContent;
+      if (typeof aiResponseData === 'string') {
+        // API error returned fallback message
+        aiContent = aiResponseData;
+      } else {
+        // Normal case - decrypt the encrypted AI response
+        const decryptResult = await encryptionClient.decrypt(
+          aiResponseData.response,  // encryptedData
+          aiResponseData.iv,        // iv
+          sessionId                 // sessionId
+        );
+        aiContent = decryptResult.decrypted_data;
+      }
 
       const finalMessages = [
         ...currentChat.messages,
         encryptedUserMessage,
         {
           role: 'ai',
-          content: decryptResult.decrypted_data,
+          content: aiContent,
           timestamp: new Date().toISOString(),
           encrypted: true
         }
@@ -1113,6 +1181,7 @@ const App = () => {
             setCurrentChatId={setCurrentChatId}
             handleDeleteRequest={handleDeleteRequest}
             handleUserSubmit={handleUserSubmit}
+            updateChat={updateChat}
             isLoadingChats={isLoadingChats}
             loadChatsFromBackend={loadChatsFromBackend}
           />

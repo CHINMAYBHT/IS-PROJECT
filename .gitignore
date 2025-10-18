@@ -3,3 +3,5 @@ Frontend/node_modules/
 # Environment variables
 .env
 *.env
+
+Backend/node_modules

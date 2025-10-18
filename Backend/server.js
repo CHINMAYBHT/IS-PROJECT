@@ -17,7 +17,7 @@ app.use(bodyParser.json());
 // Environment variables
 const API_KEY = process.env.OPENROUTER_API_KEY;
 const API_URL = process.env.OPENROUTER_API_URL;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 console.log('🚀 Starting Express Server...');
 console.log('📋 Environment Variables:');
@@ -488,11 +488,11 @@ app.post('/api/ai/generate', authenticateToken, async (req, res) => {
       console.log(`🤖 [AI GENERATE] Plain message: "${plainTextMessage.substring(0, 50)}${plainTextMessage.length > 50 ? '...' : ''}"`);
     }
 
-    // Format chat history for OpenRouter API
-    const messages = chatHistory.map(msg => ({
-      role: msg.role === 'ai' ? 'assistant' : 'user',
-      content: msg.content
-    }));
+    // Format chat history for OpenRouter API (filter out any null/undefined content)
+  const messages = chatHistory.filter(msg => msg.content).map(msg => ({
+    role: msg.role === 'ai' ? 'assistant' : 'user',
+    content: msg.content
+  }));
 
     // Ensure we always have at least the current user message
     if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
