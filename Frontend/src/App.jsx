@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { FiUser, FiLogOut, FiPlus, FiTrash2, FiEdit3, FiEye, FiEyeOff, FiLock, FiX, FiAlertTriangle, FiMenu, FiArrowUp, FiMoreHorizontal, FiSettings } from 'react-icons/fi';
 import { RiDeleteBin6Line } from 'react-icons/ri';
-import { IoWarningOutline } from 'react-icons/io5';
 import { uuidv4 } from './utils/uuid';
 import { getPasswordStrength } from './utils/password';
 import { apiClient, encryptionClient, generateAiResponse } from './utils/api';
@@ -106,6 +105,7 @@ const SignUpPage = ({ setView, onAuthSuccess }) => {
       });
 
       onAuthSuccess(result.token, result.user);
+      encryptionClient.setToken(result.token);
       setView('dashboard');
     } catch (error) {
       // Error message is now user-friendly from the API client
@@ -156,6 +156,7 @@ const SignInPage = ({ setView, onAuthSuccess }) => {
       });
 
       onAuthSuccess(result.token, result.user);
+      encryptionClient.setToken(result.token);
       setView('dashboard');
     } catch (error) {
       // Error message is now user-friendly from the API client
@@ -464,12 +465,6 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    if(currentChat) {
-      scrollToBottom();
-    }
-  }, [currentChat?.messages]);
-
 
 
 
@@ -480,6 +475,11 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
     const userMessage = inputText.trim();
     setInputText('');
     setIsTyping(true);
+
+    // Scroll to bottom when sending message with slight delay to ensure DOM update
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
 
     await handleUserSubmit(userMessage);
 
@@ -720,6 +720,14 @@ const App = () => {
 
     } catch (error) {
       console.error(`Error loading messages for chat ${chatId}:`, error);
+      // If chat doesn't exist (404), remove it from local state
+      if (error.message && error.message.includes('404')) {
+        console.log(`Removing orphaned chat from local state: ${chatId}`);
+        setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
+        if (currentChatId === chatId) {
+          setCurrentChatId(null);
+        }
+      }
     }
   };
 
@@ -980,8 +988,8 @@ const App = () => {
         user.id // user ID for database lookup
       );
 
-      // Backend will decrypt, process with AI, encrypt response, and store all in database
-      console.log('✅ [ENCRYPTED CHAT] Response received, updating UI');
+      // Backend will decrypt, process with AI, encrypt response, and return encrypted response
+      console.log('✅ [ENCRYPTED CHAT] Response received, updating UI and database');
 
       let aiContent;
       if (typeof aiResponseData === 'string') {
@@ -996,6 +1004,28 @@ const App = () => {
         );
         aiContent = decryptResult.decrypted_data;
       }
+
+      // STORE BOTH USER MESSAGE AND AI RESPONSE IN DATABASE
+      console.log('💾 [ENCRYPTED CHAT] Storing messages in database...');
+      await apiClient.storeEncryptedMessage(
+        currentChat.id,
+        userMessage,  // Plain text for database reference
+        encryptedMessage.encrypted_data,  // Encrypted user message
+        encryptedMessage.iv,
+        sessionId,
+        'user'
+      );
+
+      await apiClient.storeEncryptedMessage(
+        currentChat.id,
+        aiContent,  // Plain text AI response for database reference
+        aiResponseData.response,  // Encrypted AI response
+        aiResponseData.iv,
+        sessionId,
+        'ai'
+      );
+
+      console.log('✅ [ENCRYPTED CHAT] Messages stored successfully');
 
       const finalMessages = [
         ...currentChat.messages,

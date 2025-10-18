@@ -6,6 +6,17 @@ import mysql.connector
 import json
 from datetime import datetime
 from AES import AESCipher
+from rsa import rsa_encrypt, rsa_decrypt
+# Import original RSA functions for compatibility
+def rsa_encrypt_simple(message, public_key):
+    n, e = public_key
+    encmsg = [pow(ord(char), e, n) for char in message]
+    return encmsg
+
+def rsa_decrypt_simple(encrypted_ints, private_key):
+    n, d = private_key
+    decmsg = "".join(chr(pow(i, d, n)) for i in encrypted_ints)
+    return decmsg
 import os
 from dotenv import load_dotenv
 
@@ -93,35 +104,51 @@ encryption_keys = {}
 
 @app.route('/api/encryption/generate-key', methods=['POST'])
 def generate_encryption_key():
-    """Generate a new encryption key for a session and store in database"""
+    """Generate a new AES encryption key for a session and encrypt it with client's RSA public key"""
     print('🔑 [GENERATE KEY] Request received...')
 
     # Get session data from request
     session_id = request.json.get('session_id')
-    user_id = request.json.get('user_id')  # Need user_id to store in database
+    user_id = request.json.get('user_id')
+    client_public_key = request.json.get('public_key')  # Client's RSA public key
 
-    if not session_id or not user_id:
-        print('❌ [GENERATE KEY] Missing session ID or user ID')
-        return jsonify({'success': False, 'error': 'Session ID and user ID required'}), 400
+    if not session_id or not user_id or not client_public_key or len(client_public_key) != 2:
+        print('❌ [GENERATE KEY] Missing session ID, user ID, or invalid client public key')
+        return jsonify({'success': False, 'error': 'Session ID, user ID, and valid client public key required'}), 400
 
     print(f'🔑 [GENERATE KEY] Generating AES-256 key for session: {session_id}')
 
-    # Generate the encryption key
-    key = generate_key()
-    key_b64 = base64.b64encode(key).decode('utf-8')
+    # Generate the AES encryption key
+    aes_key = generate_key()
 
-    # Store in memory for fast access
-    encryption_keys[session_id] = key
+    # Convert AES key to base64 string for RSA encryption
+    aes_key_b64 = base64.b64encode(aes_key).decode('utf-8')
 
-    # Store in database for persistence
+    try:
+        # Parse client's RSA public key [n_str, e_str] to integers
+        n = int(client_public_key[0])
+        e = int(client_public_key[1])
+        client_public_key_int = (n, e)
+
+        # Encrypt the AES key using client's RSA public key (simple char-by-char)
+        rsa_encrypted_aes_key = rsa_encrypt_simple(aes_key_b64, client_public_key_int)
+        print(f'🔐 [GENERATE KEY] AES key encrypted with client\'s RSA public key')
+    except Exception as e:
+        print(f'❌ [GENERATE KEY] RSA encryption failed: {e}')
+        return jsonify({'success': False, 'error': 'Failed to encrypt AES key with RSA'}), 500
+
+    # Store plain AES key in memory for fast access
+    encryption_keys[session_id] = aes_key
+
+    # Store in database for persistence (only store the base64 encoded AES key)
     conn = get_db_connection()
     if conn:
         try:
             cursor = conn.cursor()
 
-            # Create session data JSON with key and algorithm info
+            # Create session data JSON with AES key and algorithm info
             session_data = json.dumps({
-                'encryption_key': key_b64,
+                'encryption_key': aes_key_b64,
                 'algorithm': 'AES-256-CBC',
                 'session_id': session_id
             })
@@ -138,7 +165,7 @@ def generate_encryption_key():
             conn.commit()
             cursor.close()
 
-            print(f'💾 [GENERATE KEY] Session key stored in database for session: {session_id}')
+            print(f'💾 [GENERATE KEY] AES key stored in database for session: {session_id}')
 
         except mysql.connector.Error as err:
             print(f'❌ [GENERATE KEY] Database error: {err}')
@@ -146,12 +173,13 @@ def generate_encryption_key():
         finally:
             conn.close()
 
-    print(f'✅ [GENERATE KEY] Key generated and stored for session: {session_id}')
+    print(f'✅ [GENERATE KEY] AES key generated, encrypted with RSA, and prepared for client')
     print(f'📊 [GENERATE KEY] Total active sessions: {len(encryption_keys)}')
 
+    # Return the RSA-encrypted AES key to client
     return jsonify({
         'success': True,
-        'key': key_b64,
+        'encrypted_aes_key': str(rsa_encrypted_aes_key),  # RSA-encrypted AES key as string
         'session_id': session_id
     })
 
