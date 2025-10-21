@@ -299,31 +299,78 @@ CREATE TABLE sessions (
 
 ---
 
-## Deployment & Configuration
+## Deployment Options
 
-### Environment Variables
+### 🐳 Docker Deployment (Recommended)
+The easiest way to run the application is using Docker:
+
 ```bash
-# Database
-DB_HOST=localhost
-DB_USER=your_db_user
-DB_PASS=your_db_password
-DB_NAME=secure_chat_db
-
-# Server
-PORT=3001
-JWT_SECRET=your_jwt_secret
-
-# AI API
-OPENROUTER_API_KEY=your_api_key
-OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+# Quick start with Docker
+git clone https://github.com/CHINMAYBHT/IS-PROJECT.git
+cd IS-PROJECT
+cp Backend/.env.example Backend/.env
+# Edit Backend/.env with API keys
+docker compose up --build
 ```
 
-### Development Setup
-1. Install dependencies: `npm install` (frontend/backend)
-2. Set up MySQL database
-3. Configure environment variables
-4. Run backend: `npm start` (Node) + `python app.py` (Flask)
-5. Run frontend: `npm run dev`
+**Access:** http://localhost:5173
+
+📖 **See detailed Docker guide**: [`DOCKER_README.md`](DOCKER_README.md)
+
+### 🔧 Manual Development Setup
+
+1. **Database Setup:**
+   ```bash
+   # Install MySQL and create database manually
+   # Follow SETUP.md for complete database setup
+   ```
+
+2. **Environment Variables:**
+   ```env
+   # Database
+   DB_HOST=localhost
+   DB_USER=root
+   DB_PASS=password123
+   DB_NAME=secure_chat_db
+
+   # Server
+   PORT=3001
+   JWT_SECRET=your-32-char-jwt-secret
+
+   # AI API
+   OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxx
+   OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+   ```
+
+3. **Install Dependencies:**
+   ```bash
+   # Backend (Node.js)
+   cd Backend
+   npm install
+
+   # Encryption Service (Python)
+   cd ../Backend/encryption
+   pip install -r requirements.txt
+
+   # Frontend (React)
+   cd ../../Frontend
+   npm install
+   ```
+
+4. **Start Services:**
+   ```bash
+   # Terminal 1: MySQL (if not running)
+   # Terminal 2: Backend
+   cd Backend && npm start
+
+   # Terminal 3: Encryption Service
+   cd Backend/encryption && python app.py
+
+   # Terminal 4: Frontend
+   cd Frontend && npm run dev
+   ```
+
+📖 **See complete setup guide**: [`SETUP.md`](SETUP.md)
 
 ### Production Deployment
 - Use HTTPS (mandatory for Web Crypto API)
@@ -346,4 +393,3 @@ OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
 ---
 
 ## Compliance & Standards
-

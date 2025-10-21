@@ -1,0 +1,117 @@
+tversion: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: secure-chat-db
+    environment:
+      MYSQL_ROOT_PASSWORD: password123
+      MYSQL_DATABASE: secure_chat_db
+      MYSQL_USER: chat_user
+      MYSQL_PASSWORD: chat_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - secure-chat-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    restart: unless-stopped
+
+  # Node.js Main Backend API
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: secure-chat-backend
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=mysql
+      - DB_USER=chat_user
+      - DB_PASS=chat_password
+      - DB_NAME=secure_chat_db
+      - PORT=3001
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+    ports:
+      - "3001:3001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - secure-chat-network
+    restart: unless-stopped
+    volumes:
+      - ./Backend/logs:/app/logs
+
+  # Python Encryption Microservice
+  encryption-service:
+    build:
+      context: ./Backend/encryption
+      dockerfile: Dockerfile
+    container_name: secure-chat-encryption
+    environment:
+      - FLASK_ENV=production
+      - DB_HOST=mysql
+      - DB_USER=chat_user
+      - DB_PASS=chat_password
+      - DB_NAME=secure_chat_db
+    ports:
+      - "5001:5001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - secure-chat-network
+    restart: unless-stopped
+    volumes:
+      - ./Backend/encryption/logs:/app/logs
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: secure-chat-frontend
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "5173:80"
+      - "5174:443"  # Optional for HTTPS
+    depends_on:
+      - backend
+      - encryption-service
+    networks:
+      - secure-chat-network
+    restart: unless-stopped
+
+  # Optional: Redis for session caching (uncomment if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: secure-chat-redis
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - secure-chat-network
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis_data:/data
+
+volumes:
+  mysql_data:
+    driver: local
+  # redis_data:
+  #   driver: local
+
+networks:
+  secure-chat-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

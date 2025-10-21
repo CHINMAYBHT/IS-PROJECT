@@ -381,11 +381,8 @@ const PastChatsList = ({ chats, currentChatId, setCurrentChatId, createNewChat, 
 
   return (
     <div className="flex flex-col h-full bg-black text-gray-200">
-      <div className="p-4 flex-shrink-0 flex items-center gap-3 border-b border-gray-800">
-        <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center">
-            <FiUser size={22} className="text-white"/>
-        </div>
-        <h1 className="text-lg font-semibold text-white">Secure AI</h1>
+      <div className="p-4 flex-shrink-0 border-b border-gray-800">
+        <img src="/LOGO.png" alt="Logo" className="h-7" />
       </div>
       <div className="p-2 flex-shrink-0">
         <button onClick={createNewChat} className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer">
