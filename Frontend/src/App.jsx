@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { FiUser, FiLogOut, FiPlus, FiTrash2, FiEdit3, FiEye, FiEyeOff, FiLock, FiX, FiAlertTriangle, FiMenu, FiArrowUp, FiMoreHorizontal, FiSettings } from 'react-icons/fi';
+import { FiUser, FiLogOut, FiPlus, FiTrash2, FiEdit3, FiEye, FiEyeOff, FiLock, FiX, FiAlertTriangle, FiMenu, FiArrowUp, FiMoreHorizontal, FiSettings, FiImage } from 'react-icons/fi';
 import { RiDeleteBin6Line } from 'react-icons/ri';
 import { uuidv4 } from './utils/uuid';
 import { getPasswordStrength } from './utils/password';
@@ -265,7 +265,7 @@ const ConfirmationModal = ({ confirmation, onConfirm, onCancel }) => {
 };
 
 
-const SettingsModal = ({ setView, handleDeleteAccountRequest }) => {
+const SettingsModal = ({ setView, handleDeleteAccountRequest, handleClearAllChatsRequest }) => {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-40 p-4">
       <div className="bg-zinc-900/95 border border-zinc-700/50 rounded-xl shadow-2xl max-w-md w-full backdrop-blur-sm">
@@ -289,6 +289,21 @@ const SettingsModal = ({ setView, handleDeleteAccountRequest }) => {
             <p className="text-sm text-zinc-300">Manage your account and preferences</p>
           </div>
           
+          {/* Clear All Chats Section */}
+          <div className="border border-yellow-500/20 bg-yellow-500/5 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FiTrash2 className="w-4 h-4 text-yellow-400" />
+              <h4 className="text-sm font-medium text-yellow-400">Clear Chat History</h4>
+            </div>
+            <p className="text-xs text-zinc-400 mb-4">Delete all your chat conversations. This action cannot be undone.</p>
+            <button
+              onClick={() => { handleClearAllChatsRequest(); setView('dashboard'); }}
+              className="px-3 py-2 text-xs font-medium text-white bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors cursor-pointer"
+            >
+              Clear All Chats
+            </button>
+          </div>
+          
           <div className="border border-red-500/20 bg-red-500/5 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               <RiDeleteBin6Line className="w-4 h-4 text-red-400" />
@@ -308,7 +323,7 @@ const SettingsModal = ({ setView, handleDeleteAccountRequest }) => {
   );
 };
 
-const UserProfileMenu = ({ setView, handleDeleteRequest }) => {
+const UserProfileMenu = ({ user, setView, handleDeleteRequest }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -333,7 +348,7 @@ const UserProfileMenu = ({ setView, handleDeleteRequest }) => {
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center mr-3">
                 <span className="text-white font-bold">A</span>
             </div>
-            <span className="text-sm font-medium text-white">Anonymous User</span>
+            <span className="text-sm font-medium text-white">{user?.email || 'Anonymous User'}</span>
         </div>
         <FiMoreHorizontal size={18} className="text-gray-400" />
       </button>
@@ -363,7 +378,7 @@ const UserProfileMenu = ({ setView, handleDeleteRequest }) => {
 };
 
 
-const PastChatsList = ({ chats, currentChatId, setCurrentChatId, createNewChat, updateChat, handleDeleteRequest, setView }) => {
+const PastChatsList = ({ user, chats, currentChatId, setCurrentChatId, createNewChat, updateChat, handleDeleteRequest, setView }) => {
   const [editingId, setEditingId] = useState(null);
   const [newTitle, setNewTitle] = useState('');
 
@@ -435,7 +450,7 @@ const PastChatsList = ({ chats, currentChatId, setCurrentChatId, createNewChat, 
       </div>
       
       <div className="p-2 border-t border-gray-800 flex-shrink-0">
-          <UserProfileMenu setView={setView} handleDeleteRequest={handleDeleteRequest} />
+          <UserProfileMenu user={user} setView={setView} handleDeleteRequest={handleDeleteRequest} />
       </div>
 
     </div>
@@ -446,9 +461,77 @@ const PastChatsList = ({ chats, currentChatId, setCurrentChatId, createNewChat, 
 const ChatInterface = ({ currentChat, handleUserSubmit }) => {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('openai/gpt-3.5-turbo');
+  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [modelSwitchMessage, setModelSwitchMessage] = useState('');
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null); // For image upload
+  const [imagePreview, setImagePreview] = useState(null); // For image preview
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null); // Ref for event delegation
   const textareaRef = useRef(null);
+  const modelSelectorRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Free OpenRouter models (including vision models)
+  const freeModels = [
+    { id: 'openai/gpt-3.5-turbo', name: 'GPT-3.5 Turbo', vision: false },
+    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', vision: true },
+    { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', vision: false },
+    { id: 'deepseek/deepseek-chat-v3.1:free', name: 'DeepSeek Chat v3.1', vision: false },
+    { id: 'deepseek/deepseek-chat-v3-0324:free', name: 'DeepSeek Chat v3', vision: false },
+    { id: 'deepseek/deepseek-r1-distill-llama-70b:free', name: 'DeepSeek R1 Distill 70B', vision: false },
+    { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528', vision: false },
+    { id: 'deepseek/deepseek-r1-0528-qwen3-8b:free', name: 'DeepSeek R1 Qwen3 8B', vision: false },
+    { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', vision: false },
+    { id: 'meta-llama/llama-3.3-8b-instruct:free', name: 'Llama 3.3 8B', vision: false },
+    { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B', vision: false },
+    { id: 'meta-llama/llama-3.2-1b-instruct:free', name: 'Llama 3.2 1B', vision: false },
+    { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B', vision: false },
+    { id: 'meta-llama/llama-4-maverick:free', name: 'Llama 4 Maverick', vision: true },
+    { id: 'meta-llama/llama-4-scout:free', name: 'Llama 4 Scout', vision: true },
+    { id: 'qwen/qwen-2.5-72b-instruct:free', name: 'Qwen 2.5 72B', vision: false },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct:free', name: 'Qwen 2.5 Coder 32B', vision: false },
+    { id: 'qwen/qwen2.5-vl-72b-instruct:free', name: 'Qwen 2.5 VL 72B', vision: true },
+    { id: 'qwen/qwen2.5-vl-32b-instruct:free', name: 'Qwen 2.5 VL 32B', vision: true },
+    { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B', vision: false },
+    { id: 'qwen/qwen3-30b-a3b:free', name: 'Qwen3 30B', vision: false },
+    { id: 'qwen/qwen3-14b:free', name: 'Qwen3 14B', vision: false },
+    { id: 'qwen/qwen3-8b:free', name: 'Qwen3 8B', vision: false },
+    { id: 'qwen/qwen3-4b:free', name: 'Qwen3 4B', vision: false },
+    { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder', vision: false },
+    { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B Instruct', vision: false },
+    { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', vision: true },
+    { id: 'google/gemma-3-12b-it:free', name: 'Gemma 3 12B', vision: true },
+    { id: 'google/gemma-3-4b-it:free', name: 'Gemma 3 4B', vision: true },
+    { id: 'google/gemma-3n-e4b-it:free', name: 'Gemma 3N E4B', vision: false },
+    { id: 'google/gemma-3n-e2b-it:free', name: 'Gemma 3N E2B', vision: false },
+    { id: 'google/gemma-2-9b-it:free', name: 'Gemma 2 9B', vision: false },
+    { id: 'google/gemini-flash-1.5', name: 'Gemini Flash 1.5', vision: false },
+    { id: 'mistralai/mistral-small-3.2-24b-instruct:free', name: 'Mistral Small 3.2 24B', vision: true },
+    { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1 24B', vision: true },
+    { id: 'mistralai/mistral-small-24b-instruct-2501:free', name: 'Mistral Small 24B 2501', vision: false },
+    { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B', vision: false },
+    { id: 'mistralai/mistral-nemo:free', name: 'Mistral Nemo', vision: false },
+    { id: 'mistralai/devstral-small-2505:free', name: 'Devstral Small', vision: false },
+    { id: 'moonshotai/kimi-dev-72b:free', name: 'Kimi Dev 72B', vision: false },
+    { id: 'moonshotai/kimi-k2:free', name: 'Kimi K2', vision: false },
+    { id: 'alibaba/tongyi-deepresearch-30b-a3b:free', name: 'Tongyi DeepResearch 30B', vision: false },
+    { id: 'meituan/longcat-flash-chat:free', name: 'LongCat Flash', vision: false },
+    { id: 'nvidia/nemotron-nano-9b-v2:free', name: 'Nemotron Nano 9B', vision: false },
+    { id: 'openai/gpt-oss-20b:free', name: 'GPT OSS 20B', vision: false },
+    { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air', vision: false },
+    { id: 'tencent/hunyuan-a13b-instruct:free', name: 'Hunyuan A13B', vision: false },
+    { id: 'tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1T2 Chimera', vision: false },
+    { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', vision: false },
+    { id: 'microsoft/mai-ds-r1:free', name: 'MAI DS R1', vision: false },
+    { id: 'shisa-ai/shisa-v2-llama3.3-70b:free', name: 'Shisa v2 Llama 3.3 70B', vision: false },
+    { id: 'arliai/qwq-32b-arliai-rpr-v1:free', name: 'QwQ 32B RPR', vision: false },
+    { id: 'agentica-org/deepcoder-14b-preview:free', name: 'DeepCoder 14B', vision: false },
+    { id: 'nousresearch/deephermes-3-llama-3-8b-preview:free', name: 'DeepHermes 3 Llama 8B', vision: false },
+    { id: 'cognitivecomputations/dolphin3.0-mistral-24b:free', name: 'Dolphin 3.0 Mistral 24B', vision: false },
+    { id: 'cognitivecomputations/dolphin-mistral-24b-venice-edition:free', name: 'Dolphin Mistral 24B Venice', vision: false },
+  ];
 
   // Auto-resize textarea
   useEffect(() => {
@@ -457,6 +540,80 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
     }
   }, [inputText]);
+
+  // Handle click outside model selector
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target)) {
+        setShowModelSelector(false);
+        setModelSearchQuery(''); // Clear search when closing
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Clear model switch message after 3 seconds
+  useEffect(() => {
+    if (modelSwitchMessage) {
+      const timer = setTimeout(() => {
+        setModelSwitchMessage('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [modelSwitchMessage]);
+
+  // Handle model selection
+  const handleModelChange = (modelId) => {
+    const model = freeModels.find(m => m.id === modelId);
+    setSelectedModel(modelId);
+    setShowModelSelector(false);
+    setModelSearchQuery(''); // Clear search when selecting
+    setModelSwitchMessage(`Successfully switched to ${model.name}`);
+  };
+
+  // Filter models based on search query and image selection
+  const filteredModels = freeModels.filter(model => {
+    // If image is selected, only show vision models
+    if (selectedImage) {
+      if (!model.vision) return false;
+    }
+    
+    // Apply search filter
+    return model.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
+           model.id.toLowerCase().includes(modelSearchQuery.toLowerCase());
+  });
+
+  // Handle image selection
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+      
+      // Auto-switch to a vision model if current model doesn't support vision
+      const currentModelSupportsVision = freeModels.find(m => m.id === selectedModel)?.vision;
+      if (!currentModelSupportsVision) {
+        setSelectedModel('qwen/qwen2.5-vl-72b-instruct:free');
+        setModelSwitchMessage('Switched to Qwen 2.5 VL 72B for image processing');
+      }
+    }
+  };
+
+  // Remove selected image
+  const removeImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -467,10 +624,18 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (inputText.trim() === '' || isTyping) return;
+    if ((inputText.trim() === '' && !selectedImage) || isTyping) return;
 
-    const userMessage = inputText.trim();
+    const userMessage = inputText.trim() || 'What is in this image?';
+    const imageToSend = selectedImage;
+    const imagePreviewToSend = imagePreview;
+    
     setInputText('');
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setIsTyping(true);
 
     // Scroll to bottom when sending message with slight delay to ensure DOM update
@@ -478,7 +643,7 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
       scrollToBottom();
     }, 100);
 
-    await handleUserSubmit(userMessage);
+    await handleUserSubmit(userMessage, selectedModel, imageToSend, imagePreviewToSend);
 
     setIsTyping(false);
   };
@@ -487,7 +652,8 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
 
   return (
     <div className="flex flex-col h-full bg-black">
-      <div ref={chatContainerRef} className="flex-grow overflow-y-auto p-6 space-y-6 scrollbar-hide">
+      {/* Messages Area - with bottom padding to prevent crossing into input */}
+      <div ref={chatContainerRef} className="flex-grow overflow-y-auto p-6 pb-32 space-y-6 scrollbar-hide">
         {isNewChat ? (
            <div className="flex h-full flex-col items-center justify-center text-center">
              <div className="w-16 h-16 rounded-full bg-gray-950 flex items-center justify-center mb-4 border-2 border-gray-700">
@@ -507,7 +673,16 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
                   }`}
                 >
                   {msg.role === 'user' ? (
+                    <>
+                      {msg.imageUrl && (
+                        <img 
+                          src={msg.imageUrl} 
+                          alt="Uploaded" 
+                          className="max-w-sm max-h-60 rounded-lg mb-2" 
+                        />
+                      )}
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content || ''}</p>
+                    </>
                   ) : (
                       (msg.content === null || msg.content === undefined) ? (
                           // Thinking placeholder
@@ -528,10 +703,126 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
       </div>
       
       <div className="px-4 pb-4 w-full flex-shrink-0">
+        {/* Model switch message */}
+        {modelSwitchMessage && (
+          <div className="w-full mx-auto mb-3 px-4 py-3 bg-gradient-to-r from-blue-600/30 to-purple-600/30 border border-blue-500/40 rounded-2xl text-center shadow-lg backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-2">
+              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm font-medium text-white">{modelSwitchMessage}</p>
+            </div>
+          </div>
+        )}
+        
         <form
           onSubmit={handleSubmit}
-          className="relative flex items-center max-w-4xl mx-auto bg-gray-900 border border-gray-700 rounded-2xl shadow-lg"
+          className="relative flex items-end w-[75%] mx-auto bg-gray-900 border py-1 border-gray-700 rounded-3xl shadow-lg"
         >
+          {/* Model Selector */}
+          <div className="relative flex-shrink-0 self-end mb-3" ref={modelSelectorRef}>
+            <button
+              type="button"
+              onClick={() => setShowModelSelector(!showModelSelector)}
+              className="ml-3 px-3 py-2 text-xs text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-xl flex items-center gap-2 transition-colors border border-gray-600"
+              disabled={isTyping}
+            >
+              <span className="max-w-[120px] truncate">
+                {freeModels.find(m => m.id === selectedModel)?.name || 'Select Model'}
+              </span>
+              <FiMenu size={14} className={`transition-transform ${showModelSelector ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {showModelSelector && (
+              <div className="absolute bottom-full mb-2 left-3 w-80 bg-gray-800 border border-gray-600 rounded-xl shadow-xl z-50">
+                <div className="p-2">
+                  {/* Search Input */}
+                  <div className="mb-2">
+                    <input
+                      type="text"
+                      value={modelSearchQuery}
+                      onChange={(e) => setModelSearchQuery(e.target.value)}
+                      placeholder="Search models..."
+                      className="w-full px-3 py-2 text-sm bg-gray-900 border border-gray-600 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      autoFocus
+                    />
+                  </div>
+                  
+                  <p className="text-xs text-gray-400 px-2 py-1 font-semibold mb-1">
+                    {selectedImage ? (
+                      <span className="text-blue-400">🖼️ Vision Models: {filteredModels.length} available</span>
+                    ) : (
+                      <>{filteredModels.length} of {freeModels.length} models</>
+                    )}
+                  </p>
+                  
+                  {/* Scrollable Model List */}
+                  <div className="max-h-80 overflow-y-auto">
+                    {filteredModels.length > 0 ? (
+                      filteredModels.map((model) => (
+                        <button
+                          key={model.id}
+                          type="button"
+                          onClick={() => handleModelChange(model.id)}
+                          className={`w-full text-left px-3 py-2.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
+                            selectedModel === model.id
+                              ? 'bg-blue-600 text-white font-medium'
+                              : 'text-gray-300 hover:bg-gray-700'
+                          }`}
+                        >
+                          {model.vision && <FiImage className="w-4 h-4 text-blue-400 flex-shrink-0" />}
+                          <span>{model.name}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 text-center py-4">No models found</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Image Preview */}
+          {imagePreview && (
+            <div className="absolute bottom-full mb-2 left-16 bg-gray-800 border border-gray-600 rounded-lg p-2">
+              <div className="relative">
+                <img src={imagePreview} alt="Preview" className="max-w-xs max-h-40 rounded" />
+                <button
+                  type="button"
+                  onClick={removeImage}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageSelect}
+            className="hidden"
+          />
+
+          {/* Image Upload Button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex-shrink-0 self-end mb-3 ml-3 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+            disabled={isTyping}
+            title="Add image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+
           <textarea
             ref={textareaRef}
             value={inputText}
@@ -548,14 +839,16 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
             disabled={isTyping}
             style={{minHeight: '60px', maxHeight: '200px', cursor: isTyping ? 'not-allowed' : 'text'}}
           />
+          
+          {/* Send Button */}
           <button
             type="submit"
-            className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition-colors cursor-pointer ${
-                (inputText.trim() && !isTyping)
+            className={`flex-shrink-0 self-end mb-3 mr-4 p-2 rounded-full transition-colors cursor-pointer ${
+                ((inputText.trim() || selectedImage) && !isTyping)
                 ? 'bg-white text-black'
                 : 'bg-gray-700 text-white'
             } disabled:bg-gray-800 disabled:cursor-not-allowed`}
-            disabled={inputText.trim() === '' || isTyping}
+            disabled={(inputText.trim() === '' && !selectedImage) || isTyping}
           >
             <FiArrowUp size={18} />
           </button>
@@ -566,7 +859,7 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
 };
 
 
-const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, handleDeleteRequest, handleUserSubmit, updateChat }) => {
+const Dashboard = ({ user, setView, chats, setChats, currentChatId, setCurrentChatId, handleDeleteRequest, handleUserSubmit, updateChat }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const currentChat = chats.find(c => c.id === currentChatId);
 
@@ -579,6 +872,7 @@ const Dashboard = ({ setView, chats, setChats, currentChatId, setCurrentChatId, 
       {/* Sidebar */}
       <div className={`flex-shrink-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-0'} overflow-hidden`}>
           <PastChatsList
+              user={user}
               chats={chats}
               currentChatId={currentChatId}
               setCurrentChatId={setCurrentChatId}
@@ -803,7 +1097,22 @@ const App = () => {
     }
   }, [currentChatId, chats]);
 
-  const handleUserSubmit = async (userMessage) => {
+  const handleUserSubmit = async (userMessage, selectedModel = 'openai/gpt-3.5-turbo', imageFile = null, imagePreviewUrl = null) => {
+    // Convert image to base64 if provided
+    let imageBase64 = null;
+    if (imageFile) {
+      imageBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          // Extract base64 data (remove data:image/...;base64, prefix)
+          const base64String = reader.result.split(',')[1];
+          resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(imageFile);
+      });
+    }
+
     let targetChatId = currentChatId;
     let currentChats = chats;
 
@@ -849,6 +1158,7 @@ const App = () => {
       const newUserMessage = {
         role: 'user',
         content: userMessage, // Show plain text in UI
+        imageUrl: imagePreviewUrl, // Store image preview
         timestamp: new Date().toISOString()
       };
 
@@ -872,10 +1182,11 @@ const App = () => {
           iv: encryptedUserMessage.iv
         },
         [], // No context for new chat
-        "openai/gpt-3.5-turbo",
+        selectedModel, // Use selected model
         true, // encrypted flag
         sessionId, // session ID for encryption
-        user.id // user ID for database lookup
+        user.id, // user ID for database lookup
+        imageBase64 // image data
       );
 
       // Decrypt AI response for UI display (aiResponseData.response contains encrypted data)
@@ -942,6 +1253,7 @@ const App = () => {
       const encryptedUserMessage = {
         role: 'user',
         content:userMessage,
+        imageUrl: imagePreviewUrl,
         timestamp: new Date().toISOString(),
         encrypted: true
       };
@@ -979,10 +1291,11 @@ const App = () => {
           iv: encryptedMessage.iv
         },
         contextMessages,
-        "openai/gpt-3.5-turbo",
+        selectedModel, // Use selected model
         true, // encrypted flag
         sessionId, // session ID for encryption
-        user.id // user ID for database lookup
+        user.id, // user ID for database lookup
+        imageBase64 // image data
       );
 
       // Backend will decrypt, process with AI, encrypt response, and return encrypted response
@@ -1049,6 +1362,7 @@ const App = () => {
       const newUserMessage = {
         role: 'user',
         content: userMessage,
+        imageUrl: imagePreviewUrl,
         timestamp: new Date().toISOString()
       };
 
@@ -1071,7 +1385,7 @@ const App = () => {
       const contextMessages = lastMessages.slice(-20); // Keep last 20 messages
 
       // Send to AI
-      const aiResponse = await apiClient.generateAiResponse(userMessage, contextMessages.slice(0, -1)); // Don't send thinking
+      const aiResponse = await apiClient.generateAiResponse(userMessage, contextMessages.slice(0, -1), selectedModel, false, null, null, imageBase64); // Pass selected model and image
       console.log(`🤖 [AI RESPONSE] Got response (${aiResponse.length} chars)`);
 
       // Store both messages in database
@@ -1238,7 +1552,7 @@ const App = () => {
       <div className="font-sans min-h-screen bg-black">
         {renderContent()}
         {view === 'settings' && (
-          <SettingsModal setView={setView} handleDeleteAccountRequest={() => handleDeleteRequest('account')} />
+          <SettingsModal setView={setView} handleDeleteAccountRequest={() => handleDeleteRequest('account')} handleClearAllChatsRequest={() => handleDeleteRequest('all_chats')} />
         )}
         <ConfirmationModal
           confirmation={confirmation}

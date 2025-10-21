@@ -12,6 +12,15 @@ class ApiClient {
 
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
+    
+    // Auto-retrieve token from localStorage if not already set
+    if (!this.token) {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        this.token = storedToken;
+      }
+    }
+    
     const config = {
       headers: {
         'Content-Type': 'application/json',
@@ -135,14 +144,15 @@ class ApiClient {
   }
 
   // AI response generation
-  async generateAiResponse(userMessage, chatHistory, model = "openai/gpt-3.5-turbo", encrypted = false, sessionId = null, userId = null) {
+  async generateAiResponse(userMessage, chatHistory, model = "openai/gpt-3.5-turbo", encrypted = false, sessionId = null, userId = null, imageData = null) {
     try {
       // Prepare request body
       const requestBody = {
         userMessage,
         chatHistory,
         model,
-        encrypted
+        encrypted,
+        imageData  // Add image data
       };
 
       // Add encryption parameters if provided
@@ -159,7 +169,16 @@ class ApiClient {
       return result; // Return full result object (includes response, iv, encrypted flag)
     } catch (error) {
       console.error("Error calling AI API:", error);
-      return `There was an error connecting to the AI. Please check the console and ensure your API key is valid and has the necessary permissions. \n\n**Error:** ${error.message}`;
+      
+      // Enhanced error message with model switching suggestion
+      let errorMessage = `There was an error connecting to the AI. Please check the console and ensure your API key is valid and has the necessary permissions.\n\n**Error:** ${error.message}`;
+      
+      // Add suggestion to try different model if it's a 500 error
+      if (error.message.includes('500')) {
+        errorMessage += `\n\n💡 **Tip:** This model might be temporarily unavailable. Try switching to a different model using the model selector.`;
+      }
+      
+      return errorMessage;
     }
   }
 
@@ -194,6 +213,15 @@ class EncryptionClient {
 
   async request(endpoint, options = {}) {
     const url = `${ENCRYPTION_BASE_URL}${endpoint}`;
+    
+    // Auto-retrieve token from localStorage if not already set
+    if (!this.token) {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        this.token = storedToken;
+      }
+    }
+    
     const config = {
       headers: {
         'Content-Type': 'application/json',

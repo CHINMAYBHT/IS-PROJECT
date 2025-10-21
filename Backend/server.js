@@ -12,7 +12,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' })); // Increased limit for image uploads
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Environment variables
 const API_KEY = process.env.OPENROUTER_API_KEY;
@@ -456,13 +457,15 @@ app.delete('/api/auth/account', authenticateToken, async (req, res) => {
 
 // AI response route with encryption support
 app.post('/api/ai/generate', authenticateToken, async (req, res) => {
-  console.log(`🤖 [AI GENERATE] User ${req.user.email} requesting AI response...`);
+  const userEmail = req.user?.email || 'unknown';
+  console.log(`🤖 [AI GENERATE] User ${userEmail} requesting AI response...`);
   try {
-    const { userMessage, chatHistory, model, encrypted, sessionId, userId } = req.body;
+    const { userMessage, chatHistory, model, encrypted, sessionId, userId, imageData } = req.body;
 
     console.log(`🔐 [AI GENERATE] Encrypted: ${encrypted}`);
     console.log(`🤖 [AI GENERATE] Chat history: ${chatHistory.length} messages`);
     console.log(`🤖 [AI GENERATE] Model: ${model || 'openai/gpt-3.5-turbo'}`);
+    console.log(`🖼️ [AI GENERATE] Image provided: ${imageData ? 'Yes' : 'No'}`);
 
     let plainTextMessage;
 
@@ -494,9 +497,31 @@ app.post('/api/ai/generate', authenticateToken, async (req, res) => {
     content: msg.content
   }));
 
+    // Prepare the current user message
+    let currentMessageContent;
+    
+    if (imageData) {
+      // Vision API format with image
+      currentMessageContent = [
+        {
+          type: "text",
+          text: plainTextMessage
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:image/png;base64,${imageData}`
+          }
+        }
+      ];
+    } else {
+      // Regular text-only message
+      currentMessageContent = plainTextMessage;
+    }
+
     // Ensure we always have at least the current user message
     if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-      messages.push({ role: 'user', content: plainTextMessage });
+      messages.push({ role: 'user', content: currentMessageContent });
     }
 
     console.log(`🤖 [AI GENERATE] Sending request to OpenRouter API...`);
