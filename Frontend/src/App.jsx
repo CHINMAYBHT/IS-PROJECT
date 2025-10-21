@@ -1122,8 +1122,18 @@ const App = () => {
     if (!currentChat) {
       console.log('🎙️ [NEW CHAT] Creating new encrypted chat on backend');
 
-      // GENERATE ENCRYPTION SESSION FIRST
-      const sessionId = uuidv4(); // Generate session ID for new chat
+      // Create new chat using backend API (always encrypted by default)
+      const title = userMessage.split(' ').slice(0, 4).join(' ') || "New Chat";
+      const newChat = await apiClient.createChat({
+        title,
+        encrypted: true // All chats are encrypted by default for security
+      });
+
+      // Use the chat ID as the session ID for consistency
+      const actualChatId = newChat.id;
+      const sessionId = actualChatId; // IMPORTANT: Use chat ID as session ID
+
+      // GENERATE ENCRYPTION KEY for this session
       const keyResponse = await encryptionClient.generateKey(sessionId, user.id);
       const encryptionKey = keyResponse.key;
 
@@ -1133,22 +1143,12 @@ const App = () => {
         [sessionId]: encryptionKey
       }));
 
-      // Create new chat using backend API (always encrypted by default)
-      const title = userMessage.split(' ').slice(0, 4).join(' ') || "New Chat";
-      const newChat = await apiClient.createChat({
-        title,
-        encrypted: true // All chats are encrypted by default for security
-      });
-
-      // Update chat ID to match our session ID for consistency
-      const actualChatId = newChat.id;
-
       // Add to local state
       const updatedChats = [newChat, ...currentChats];
       setChats(updatedChats);
       setCurrentChatId(actualChatId);
 
-      console.log(`🎙️ [NEW CHAT] Created encrypted chat: ${actualChatId}, session: ${sessionId}`);
+      console.log(`🎙️ [NEW CHAT] Created encrypted chat with ID: ${actualChatId} (also used as session ID)`);
 
       // ENCRYPT USER MESSAGE
       console.log('🔐 [ENCRYPT] Encrypting user message for new chat...');
@@ -1189,13 +1189,29 @@ const App = () => {
         imageBase64 // image data
       );
 
-      // Decrypt AI response for UI display (aiResponseData.response contains encrypted data)
-      const aiResponse = await encryptionClient.decrypt(
-        aiResponseData.response,  // encryptedData
-        aiResponseData.iv,        // iv
-        sessionId                 // sessionId
-      );
-      console.log(`🤖 [AI RESPONSE] Decrypted and got response (${aiResponse.decrypted_data.length} chars)`);
+      let aiContent;
+      let encryptedAiResponse;
+      let aiIv;
+
+      // Check if API returned an error (string) or success (object)
+      if (typeof aiResponseData === 'string') {
+        // API error - show error message directly
+        console.log('❌ [AI RESPONSE] API returned error:', aiResponseData);
+        aiContent = aiResponseData;
+        encryptedAiResponse = null;
+        aiIv = null;
+      } else {
+        // Success - decrypt the response
+        const aiResponse = await encryptionClient.decrypt(
+          aiResponseData.response,  // encryptedData
+          aiResponseData.iv,        // iv
+          sessionId                 // sessionId
+        );
+        console.log(`🤖 [AI RESPONSE] Decrypted and got response (${aiResponse.decrypted_data.length} chars)`);
+        aiContent = aiResponse.decrypted_data;
+        encryptedAiResponse = aiResponseData.response;
+        aiIv = aiResponseData.iv;
+      }
 
       // Store ENCRYPTED messages in database (backend will only store encrypted data)
       await apiClient.storeEncryptedMessage(
@@ -1206,19 +1222,33 @@ const App = () => {
         sessionId,
         'user'
       );
-      await apiClient.storeEncryptedMessage(
-        actualChatId,
-        aiResponse.decrypted_data,
-        aiResponseData.response, // Encrypted AI response from backend
-        aiResponseData.iv,
-        sessionId,
-        'ai'
-      );
+      
+      if (encryptedAiResponse) {
+        // Store encrypted AI response
+        await apiClient.storeEncryptedMessage(
+          actualChatId,
+          aiContent,
+          encryptedAiResponse,
+          aiIv,
+          sessionId,
+          'ai'
+        );
+      } else {
+        // Store error message as plain text
+        await apiClient.storeEncryptedMessage(
+          actualChatId,
+          aiContent,
+          aiContent,
+          '',
+          'error',
+          'ai'
+        );
+      }
 
-      // Replace thinking message with actual DECRYPTED response
+      // Replace thinking message with actual response
       const actualAIMessage = {
         role: 'ai',
-        content: aiResponse.decrypted_data,
+        content: aiContent,
         timestamp: new Date().toISOString()
       };
 
@@ -1237,16 +1267,10 @@ const App = () => {
 
       let encryptionKey = encryptionSessions[sessionId];
       if (!encryptionKey) {
-        console.log('🔑 [ENCRYPTION] Generating new encryption key for session:', sessionId);
-        // Generate encryption key if not exists - now includes user_id for database storage
-        const keyResponse = await encryptionClient.generateKey(sessionId, user.id);
-        encryptionKey = keyResponse.key;
-
-        setEncryptionSessions(prev => ({
-          ...prev,
-          [sessionId]: encryptionKey
-        }));
-        console.log('✅ [ENCRYPTION] Key generated and stored');
+        console.log('🔑 [ENCRYPTION] No key in memory for session:', sessionId);
+        console.log('🔑 [ENCRYPTION] Backend will load key from database during decrypt operation');
+        // No need to generate a new key - the backend will load it from database
+        // when we call encrypt/decrypt endpoints
       }
 
       // IMMEDIATELY show encrypted user message in UI
@@ -1302,9 +1326,15 @@ const App = () => {
       console.log('✅ [ENCRYPTED CHAT] Response received, updating UI and database');
 
       let aiContent;
+      let encryptedAiResponse;
+      let aiIv;
+
       if (typeof aiResponseData === 'string') {
         // API error returned fallback message
+        console.log('❌ [ENCRYPTED CHAT] API error:', aiResponseData);
         aiContent = aiResponseData;
+        encryptedAiResponse = null;
+        aiIv = null;
       } else {
         // Normal case - decrypt the encrypted AI response
         const decryptResult = await encryptionClient.decrypt(
@@ -1313,6 +1343,8 @@ const App = () => {
           sessionId                 // sessionId
         );
         aiContent = decryptResult.decrypted_data;
+        encryptedAiResponse = aiResponseData.response;
+        aiIv = aiResponseData.iv;
       }
 
       // STORE BOTH USER MESSAGE AND AI RESPONSE IN DATABASE
@@ -1326,14 +1358,27 @@ const App = () => {
         'user'
       );
 
-      await apiClient.storeEncryptedMessage(
-        currentChat.id,
-        aiContent,  // Plain text AI response for database reference
-        aiResponseData.response,  // Encrypted AI response
-        aiResponseData.iv,
-        sessionId,
-        'ai'
-      );
+      if (encryptedAiResponse) {
+        // Store encrypted AI response
+        await apiClient.storeEncryptedMessage(
+          currentChat.id,
+          aiContent,
+          encryptedAiResponse,
+          aiIv,
+          sessionId,
+          'ai'
+        );
+      } else {
+        // Store error message as plain text
+        await apiClient.storeEncryptedMessage(
+          currentChat.id,
+          aiContent,
+          aiContent,
+          '',
+          'error',
+          'ai'
+        );
+      }
 
       console.log('✅ [ENCRYPTED CHAT] Messages stored successfully');
 

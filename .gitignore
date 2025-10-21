@@ -5,3 +5,7 @@ Frontend/node_modules/
 *.env
 
 Backend/node_modules
+
+
+test_qwen_vl.py
+

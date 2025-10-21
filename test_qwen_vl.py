@@ -9,7 +9,7 @@ with open(image_path, 'rb') as image_file:
 # Initialize OpenRouter client
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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",  # Replace with your OpenRouter API key
+    api_key="<API_KEY>",  # Replace with your OpenRouter API key
 )
 
 # List of vision models to test
