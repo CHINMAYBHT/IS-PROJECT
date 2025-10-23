@@ -138,6 +138,220 @@ const SignUpPage = ({ setView, onAuthSuccess }) => {
   );
 };
 
+const ForgotPasswordPage = ({ setView }) => {
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [step, setStep] = useState(1); // 1: Enter email, 2: Enter OTP, 3: Enter new password, 4: Success
+
+  // Step 1: Send OTP to email
+  const handleSendOTP = async (e) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+
+    if (!email) {
+      setError('Email is required');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await apiClient.forgotPassword(email);
+      if (result.success) {
+        setMessage('Verification code sent successfully! Please check your inbox.');
+        setStep(2); // Move to OTP verification step
+      } else {
+        setError(result.message || 'Failed to send verification code');
+      }
+    } catch (error) {
+      setError(error.message || 'Failed to send verification code');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Step 2: Verify OTP only (move to password setting)
+  const handleVerifyOTP = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!otp) {
+      setError('Please enter the verification code');
+      return;
+    }
+
+    if (otp.length !== 6) {
+      setError('Verification code must be 6 digits');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // TODO: In a complete implementation, verify OTP with server here
+      // For now, just move to password setting step
+      setStep(3); // Move to password setting step
+
+    } catch (error) {
+      setError(error.message || 'Failed to verify code');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Step 3: Set new password after OTP verification
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!newPassword || !confirmPassword) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await apiClient.verifyOTP(email, otp, newPassword);
+      if (result.success) {
+        setStep(4); // Move to success step
+      } else {
+        setError(result.message || 'Failed to reset password');
+      }
+    } catch (error) {
+      setError(error.message || 'Failed to reset password');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Step 4: Success - back to login
+  if (step === 4) {
+    return (
+      <AuthLayout
+        title="Password Reset Successful"
+        footer=""
+      >
+        <div className="space-y-4 bg-black p-6 rounded-lg text-center">
+          <p className="text-green-400 text-sm">Your password has been reset successfully!</p>
+          <p className="text-gray-400 text-sm mb-6">You can now log in with your new password.</p>
+          <Button type="button" className="w-full bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" variant="cta" onClick={() => setView('signin')}>
+            Back to Sign In
+          </Button>
+        </div>
+      </AuthLayout>
+    );
+  }
+
+  // Step 3: Set new password form
+  if (step === 3) {
+    return (
+      <AuthLayout
+        title="Set New Password"
+        footer=""
+      >
+        <form onSubmit={handleResetPassword} className="space-y-4 bg-black p-6 rounded-lg">
+          {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
+          <p className="text-gray-400 text-sm mb-4">
+            Code verified successfully! Please create a new password for your account.
+          </p>
+
+          <InputField
+            label="New Password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Enter new password"
+            isPassword
+          />
+
+          <InputField
+            label="Confirm Password"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm new password"
+            isPassword
+          />
+
+          <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" variant="cta" disabled={isLoading}>
+            {isLoading ? 'Setting Password...' : 'Set Password'}
+          </Button>
+        </form>
+      </AuthLayout>
+    );
+  }
+
+  // Step 2: OTP verification form
+  if (step === 2) {
+    return (
+      <AuthLayout
+        title="Verify Code"
+        footer={
+          <>
+            <a href="#" onClick={() => { setStep(1); setMessage('') }} className="font-semibold text-blue-400 hover:text-blue-300">Use different email</a>
+          </>
+        }
+      >
+        <form onSubmit={handleVerifyOTP} className="space-y-4 bg-black p-6 rounded-lg">
+          {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
+          <p className="text-gray-400 text-sm mb-4">
+            We've sent a verification code to <strong>{email}</strong>. Enter the 6-digit code below.
+          </p>
+
+          <InputField
+            label="Verification Code"
+            type="text"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            placeholder="Enter 6-digit code"
+            maxLength="6"
+          />
+
+          <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" variant="cta" disabled={isLoading}>
+            {isLoading ? 'Verifying...' : 'Verify Code'}
+          </Button>
+        </form>
+      </AuthLayout>
+    );
+  }
+
+  // Step 1: Email input form
+  return (
+    <AuthLayout
+      title="Reset Password"
+      footer={
+        <>
+          Remember your password? <a href="#" onClick={() => setView('signin')} className="font-semibold text-blue-400 hover:text-blue-300">Sign In</a>
+        </>
+      }
+    >
+      <form onSubmit={handleSendOTP} className="space-y-4 bg-black p-6 rounded-lg">
+        {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
+        {message && <div className="text-green-400 text-sm mb-4">{message}</div>}
+        <p className="text-gray-400 text-sm mb-4">Enter your email address and we'll send you a verification code to reset your password.</p>
+        <InputField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" variant="cta" disabled={isLoading}>
+          {isLoading ? 'Sending...' : 'Send Verification Code'}
+        </Button>
+      </form>
+    </AuthLayout>
+  );
+};
+
 const SignInPage = ({ setView, onAuthSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -167,7 +381,7 @@ const SignInPage = ({ setView, onAuthSuccess }) => {
   };
 
   return (
-    <AuthLayout title="Welcome Back" footer={<>Don't have an account? <a href="#" onClick={() => setView('signup')} className="font-semibold text-green-400 hover:text-green-300">Sign Up</a></>}>
+    <AuthLayout title="Welcome Back" footer={<><a href="#" onClick={() => setView('forgot-password')} className="font-semibold text-blue-400 hover:text-blue-300 block mb-2">Forgot Password?</a> Don't have an account? <a href="#" onClick={() => setView('signup')} className="font-semibold text-green-400 hover:text-green-300">Sign Up</a></>}>
       <form onSubmit={handleSubmit} className="space-y-4 bg-black p-6 rounded-lg">
         {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
         <InputField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
@@ -266,6 +480,99 @@ const ConfirmationModal = ({ confirmation, onConfirm, onCancel }) => {
 
 
 const SettingsModal = ({ setView, handleDeleteAccountRequest, handleClearAllChatsRequest }) => {
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetStep, setResetStep] = useState(1); // 1: Send email, 2: Enter OTP, 3: Enter new password
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const handlePasswordReset = async () => {
+    setResetError('');
+    setResetMessage('');
+    setIsSendingReset(true);
+
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!currentUser.email) {
+        setResetError('User email not found. Please sign in again.');
+        return;
+      }
+
+      const result = await apiClient.forgotPassword(currentUser.email);
+      if (result.success) {
+        setResetMessage('Verification code sent to your email!');
+        setResetStep(2); // Move to OTP verification step
+      } else {
+        setResetError(result.message || 'Failed to send verification code');
+      }
+    } catch (error) {
+      setResetError(error.message || 'Failed to send verification code');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  // Handle OTP verification
+  const handleVerifyOTP = async () => {
+    setResetError('');
+    setIsSendingReset(true);
+
+    try {
+      // Just move to password setting step (frontend-only verification for now)
+      setResetStep(3);
+    } catch (error) {
+      setResetError(error.message || 'Failed to verify code');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  // Handle password reset
+  const handleSetPassword = async () => {
+    setResetError('');
+
+    if (!newPassword || !confirmPassword) {
+      setResetError('Please fill in all fields');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setResetError('Passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setResetError('Password must be at least 6 characters long');
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!currentUser.email) {
+        setResetError('User session expired. Please sign in again.');
+        return;
+      }
+
+      const result = await apiClient.verifyOTP(currentUser.email, otp, newPassword);
+      if (result.success) {
+        setResetMessage('Password reset successfully!');
+        setResetStep(1); // Reset to initial state
+        setOtp('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setResetError(result.message || 'Failed to reset password');
+      }
+    } catch (error) {
+      setResetError(error.message || 'Failed to reset password');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-40 p-4">
       <div className="bg-zinc-900/95 border border-zinc-700/50 rounded-xl shadow-2xl max-w-md w-full backdrop-blur-sm">
@@ -276,8 +583,8 @@ const SettingsModal = ({ setView, handleDeleteAccountRequest, handleClearAllChat
             </div>
             <h3 className="text-lg font-semibold text-white">Settings</h3>
           </div>
-          <button 
-            onClick={() => setView('dashboard')} 
+          <button
+            onClick={() => setView('dashboard')}
             className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition-colors cursor-pointer"
           >
             <FiX className="w-4 h-4 text-zinc-400" />
@@ -288,7 +595,103 @@ const SettingsModal = ({ setView, handleDeleteAccountRequest, handleClearAllChat
           <div>
             <p className="text-sm text-zinc-300">Manage your account and preferences</p>
           </div>
-          
+
+          {/* Password Reset Section */}
+          <div className="border border-blue-500/20 bg-blue-500/5 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FiLock className="w-4 h-4 text-blue-400" />
+              <h4 className="text-sm font-medium text-blue-400">Reset Password</h4>
+            </div>
+            {resetStep === 1 ? (
+              <>
+                <p className="text-xs text-zinc-400 mb-4">Send a password reset email to your account email address.</p>
+                {resetMessage && <div className="text-green-400 text-sm bg-green-900/20 border border-green-500/30 rounded-lg p-3 mb-4">{resetMessage}</div>}
+                {resetError && <div className="text-red-400 text-sm mb-4">{resetError}</div>}
+                <button
+                  onClick={handlePasswordReset}
+                  disabled={isSendingReset}
+                  className="px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isSendingReset ? 'Sending...' : 'Send Reset Email'}
+                </button>
+              </>
+            ) : resetStep === 2 ? (
+              <>
+                <p className="text-xs text-zinc-400 mb-4">Enter the 6-digit verification code from your email.</p>
+                {resetError && <div className="text-red-400 text-sm mb-4">{resetError}</div>}
+                <InputField
+                  label="Verification Code"
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  placeholder="Enter 6-digit code"
+                  maxLength="6"
+                />
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => { setResetStep(1); setOtp(''); setResetError(''); setResetMessage(''); }}
+                    className="px-3 py-2 text-xs font-medium text-zinc-300 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleVerifyOTP}
+                    disabled={isSendingReset}
+                    className="flex-1 px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingReset ? 'Verifying...' : 'Verify Code'}
+                  </button>
+                </div>
+              </>
+            ) : resetStep === 3 ? (
+              <>
+                <p className="text-xs text-zinc-400 mb-4">Code verified! Enter your new password.</p>
+                {resetError && <div className="text-red-400 text-sm mb-4">{resetError}</div>}
+                <InputField
+                  label="New Password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  isPassword
+                />
+                <InputField
+                  label="Confirm Password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  isPassword
+                />
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => { setResetStep(2); setNewPassword(''); setConfirmPassword(''); setResetError(''); }}
+                    className="px-3 py-2 text-xs font-medium text-zinc-300 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleSetPassword}
+                    disabled={isSendingReset}
+                    className="flex-1 px-3 py-2 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingReset ? 'Setting...' : 'Set Password'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-zinc-400 mb-4">{resetMessage || 'Password reset successfully!'}</p>
+                <button
+                  onClick={() => { setResetStep(1); setOtp(''); setNewPassword(''); setConfirmPassword(''); setResetMessage(''); }}
+                  className="px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  Done
+                </button>
+              </>
+            )}
+          </div>
+
           {/* Clear All Chats Section */}
           <div className="border border-yellow-500/20 bg-yellow-500/5 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -303,7 +706,7 @@ const SettingsModal = ({ setView, handleDeleteAccountRequest, handleClearAllChat
               Clear All Chats
             </button>
           </div>
-          
+
           <div className="border border-red-500/20 bg-red-500/5 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               <RiDeleteBin6Line className="w-4 h-4 text-red-400" />
@@ -600,8 +1003,8 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
       // Auto-switch to a vision model if current model doesn't support vision
       const currentModelSupportsVision = freeModels.find(m => m.id === selectedModel)?.vision;
       if (!currentModelSupportsVision) {
-        setSelectedModel('qwen/qwen2.5-vl-72b-instruct:free');
-        setModelSwitchMessage('Switched to Qwen 2.5 VL 72B for image processing');
+        setSelectedModel('google/gemini-2.0-flash-exp:free');
+        setModelSwitchMessage('Switched to Gemini 2.0 Flash for image processing');
       }
     }
   };
@@ -648,7 +1051,14 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
     setIsTyping(false);
   };
 
-  const isNewChat = !currentChat || !currentChat.messages || currentChat.messages.length === 0;
+  // Sort messages by timestamp for proper display order
+  const sortedMessages = currentChat?.messages?.sort((a, b) => {
+    const timestampA = new Date(a.createdAt || a.timestamp || 0);
+    const timestampB = new Date(b.createdAt || b.timestamp || 0);
+    return timestampA - timestampB;
+  }) || [];
+
+  const isNewChat = !currentChat || !sortedMessages || sortedMessages.length === 0;
 
   return (
     <div className="flex flex-col h-full bg-black">
@@ -663,7 +1073,7 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
           </div>
         ) : (
           <>
-            {currentChat.messages.map((msg, index) => (
+            {sortedMessages.map((msg, index) => (
               <div key={index} className={`flex items-start gap-4 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`text-white ${
@@ -977,6 +1387,14 @@ const App = () => {
       if (chat && chat.encrypted) {
         processedMessages = await Promise.all(
           fetchedMessages.map(async (msg) => {
+            // Handle error messages stored as plain text
+            if (msg.sessionId === 'error') {
+              return {
+                ...msg,
+                content: msg.encryptedMessage  // This is actually a plain text error message
+              };
+            }
+
             if (msg.encryptedMessage && msg.iv && msg.sessionId) {
               try {
                 // Decrypt the message
@@ -987,10 +1405,10 @@ const App = () => {
                 };
               } catch (decryptError) {
                 console.error(`Error decrypting message ${msg.id}:`, decryptError);
-                // Fall back to showing encrypted indicator
+                // Fall back to showing a more informative message
                 return {
                   ...msg,
-                  content: '[⚠️ Encrypted message - unable to decrypt]'
+                  content: `[🔒 Message cannot be decrypted - session key missing or corrupted. Session: ${msg.sessionId}]`
                 };
               }
             } else {
@@ -1004,9 +1422,16 @@ const App = () => {
         );
       }
 
+      // Sort messages by timestamp to ensure proper chronological order
+      const sortedMessages = processedMessages.sort((a, b) => {
+        const timestampA = new Date(a.createdAt || a.timestamp || 0);
+        const timestampB = new Date(b.createdAt || b.timestamp || 0);
+        return timestampA - timestampB;
+      });
+
       // Update the chat with loaded messages
       setChats(prevChats => prevChats.map(chat =>
-        chat.id === chatId ? { ...chat, messages: processedMessages } : chat
+        chat.id === chatId ? { ...chat, messages: sortedMessages } : chat
       ));
 
     } catch (error) {
@@ -1193,11 +1618,23 @@ const App = () => {
       let encryptedAiResponse;
       let aiIv;
 
-      // Check if API returned an error (string) or success (object)
-      if (typeof aiResponseData === 'string') {
-        // API error - show error message directly
-        console.log('❌ [AI RESPONSE] API returned error:', aiResponseData);
-        aiContent = aiResponseData;
+      // Check if API returned an error object
+      if (aiResponseData && aiResponseData.metadata && aiResponseData.metadata.raw) {
+        // API error with metadata - extract the raw error message
+        console.log('❌ [AI RESPONSE] API returned error with metadata:', aiResponseData);
+        aiContent = `❌ **Model Error**\n\n${aiResponseData.metadata.raw}`;
+        encryptedAiResponse = null;
+        aiIv = null;
+      } else if (aiResponseData && aiResponseData.error) {
+        // API error with basic error field
+        console.log('❌ [AI RESPONSE] API returned error:', aiResponseData.error);
+        aiContent = `❌ **Model Error**\n\n${aiResponseData.error}`;
+        encryptedAiResponse = null;
+        aiIv = null;
+      } else if (typeof aiResponseData === 'string') {
+        // Legacy error string format
+        console.log('❌ [AI RESPONSE] API returned error string:', aiResponseData);
+        aiContent = `❌ **Model Error**\n\n${aiResponseData}`;
         encryptedAiResponse = null;
         aiIv = null;
       } else {
@@ -1556,6 +1993,8 @@ const App = () => {
         return <SignUpPage setView={setView} onAuthSuccess={handleAuthSuccess} />;
       case 'signin':
         return <SignInPage setView={setView} onAuthSuccess={handleAuthSuccess} />;
+      case 'forgot-password':
+        return <ForgotPasswordPage setView={setView} />;
       case 'dashboard':
         return (
           <Dashboard

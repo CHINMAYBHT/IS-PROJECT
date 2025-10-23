@@ -112,6 +112,60 @@ class ApiClient {
     });
   }
 
+  async forgotPassword(email) {
+    try {
+      const result = await this.request('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+
+      return {
+        success: true,
+        message: result.message || 'Verification code sent successfully'
+      };
+    } catch (error) {
+      // Provide user-friendly error messages based on error type
+      if (error.message.includes('404') || error.message.includes('not found')) {
+        throw new Error('No account found with this email address.');
+      } else if (error.message.includes('400')) {
+        throw new Error('Please provide a valid email address.');
+      } else if (error.message.includes('500')) {
+        throw new Error('Server error. Please try again later.');
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        throw new Error('Unable to connect to server. Please check your internet connection.');
+      } else {
+        throw new Error(error.message || 'Failed to send verification code.');
+      }
+    }
+  }
+
+  async verifyOTP(email, otp, newPassword) {
+    try {
+      const result = await this.request('/api/auth/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp, newPassword })
+      });
+
+      return {
+        success: true,
+        message: result.message || 'Password reset successfully'
+      };
+    } catch (error) {
+      // Provide user-friendly error messages based on error type
+      if (error.message.includes('Invalid or expired verification code')) {
+        throw new Error('The verification code you entered is invalid or has expired. Please try again.');
+      } else if (error.message.includes('400')) {
+        throw new Error('Please check your verification code and try again.');
+      } else if (error.message.includes('500')) {
+        throw new Error('Server error. Please try again later.');
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        throw new Error('Unable to connect to server. Please check your internet connection.');
+      } else {
+        throw new Error(error.message || 'Failed to verify code.');
+      }
+    }
+  }
+
   // Chat operations
   async getChats() {
     return await this.request('/api/chats');
@@ -167,19 +221,50 @@ class ApiClient {
       });
 
       return result; // Return full result object (includes response, iv, encrypted flag)
-    } catch (error) {
-      console.error("Error calling AI API:", error);
-      
-      // Enhanced error message with model switching suggestion
-      let errorMessage = `There was an error connecting to the AI. Please check the console and ensure your API key is valid and has the necessary permissions.\n\n**Error:** ${error.message}`;
-      
-      // Add suggestion to try different model if it's a 500 error
-      if (error.message.includes('500')) {
-        errorMessage += `\n\n💡 **Tip:** This model might be temporarily unavailable. Try switching to a different model using the model selector.`;
+  } catch (error) {
+    console.error("Error calling AI API:", error);
+
+    // Extract the actual API error from the response body if possible
+    let errorMessage = error.message || 'Unknown error occurred';
+
+    // Check if we have response data with metadata.raw (specific model errors)
+    if (error.message && error.message.includes('Error:')) {
+      // Try to extract any JSON error object from the error message
+      const errorMatch = error.message.match(/Error: (.+)$/);
+      if (errorMatch) {
+        try {
+          // Parse the error body as JSON to get the raw metadata
+          const errorBody = JSON.parse(errorMatch[1]);
+          if (errorBody && errorBody.error && errorBody.error.metadata && errorBody.error.metadata.raw) {
+            // Return the actual model error message from nested error object
+            return errorBody.error.metadata.raw;
+          } else if (errorBody && errorBody.metadata && errorBody.metadata.raw) {
+            // Direct metadata.raw (fallback)
+            return errorBody.metadata.raw;
+          } else if (errorBody && errorBody.error && errorBody.error.message) {
+            // Fallback to error message
+            return errorBody.error.message;
+          } else if (errorBody && errorBody.error) {
+            // Fallback to basic error field
+            return errorBody.error;
+          }
+        } catch (parseError) {
+          // Not JSON, use the basic error message
+          errorMessage = errorMatch[1];
+        }
       }
-      
-      return errorMessage;
     }
+
+    // Fallback: Enhanced error message with model switching suggestion
+    let fallbackMessage = `There was an error connecting to the AI. Please check the console and ensure your API key is valid and has the necessary permissions.\n\n**Error:** ${errorMessage}`;
+
+    // Add suggestion to try different model if it's a 500 error
+    if (error.message && error.message.includes('500')) {
+      fallbackMessage += `\n\n💡 **Tip:** This model might be temporarily unavailable. Try switching to a different model using the model selector.`;
+    }
+
+    return fallbackMessage;
+  }
   }
 
   // Chat message storage and retrieval for encrypted chats

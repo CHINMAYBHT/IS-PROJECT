@@ -7,9 +7,16 @@ const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { initializeDatabase, executeQuery, getConnection } = require('./Database/database');
+const { sendOTPReset } = require('./emailService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Helper function to generate OTP
+function generateOTP() {
+  // 6-digit numeric OTP
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' })); // Increased limit for image uploads
@@ -131,6 +138,140 @@ app.post('/api/auth/signin', async (req, res) => {
     connection.release();
   }
 });
+
+// OTP Generation route (Step 1: Send OTP)
+app.post('/api/auth/forgot-password', async (req, res) => {
+  console.log('🔑 [FORGOT PASSWORD] Forgot password request...');
+  const connection = await getConnection();
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      console.log('❌ [FORGOT PASSWORD] Email not provided');
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    console.log(`🔑 [FORGOT PASSWORD] Checking if user exists: ${email}`);
+
+    // Check if user exists
+    const [rows] = await connection.execute(
+      'SELECT id, full_name FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (rows.length === 0) {
+      console.log(`❌ [FORGOT PASSWORD] User not found: ${email}`);
+      // Return success to avoid email enumeration attacks
+      return res.json({ message: 'If this email is registered, you will receive a verification code.' });
+    }
+
+    const user = rows[0];
+    console.log(`✅ [FORGOT PASSWORD] User found: ${email} (ID: ${user.id})`);
+
+    // Generate OTP
+    const otp = generateOTP();
+    console.log(`🔑 [FORGOT PASSWORD] Generated OTP for user: ${user.id}`);
+
+    // Calculate expiration (15 minutes from now)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Delete any existing OTPs for this user and email
+    await connection.execute(
+      'DELETE FROM otps WHERE user_id = ? AND email = ? AND purpose = ?',
+      [user.id, email, 'password_reset']
+    );
+
+    // Store OTP
+    const otpId = uuidv4();
+    await connection.execute(
+      'INSERT INTO otps (id, user_id, email, otp, purpose, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [otpId, user.id, email, otp, 'password_reset', expiresAt]
+    );
+    console.log(`💾 [FORGOT PASSWORD] OTP stored in database, expires at: ${expiresAt.toISOString()}`);
+
+    console.log('📧 [FORGOT PASSWORD] Sending OTP email...');
+
+    // Send OTP via email
+    const emailResult = await sendOTPReset(email, user.full_name, otp);
+
+    if (emailResult.success) {
+      console.log(`✅ [FORGOT PASSWORD] OTP email sent to: ${email}`);
+      res.json({ message: 'Verification code sent! Please check your inbox.' });
+    } else {
+      console.error(`❌ [FORGOT PASSWORD] Failed to send OTP to: ${email}`, emailResult.error);
+      res.status(500).json({ error: 'Failed to send verification code. Please try again later.' });
+    }
+
+  } catch (error) {
+    console.error('❌ [FORGOT PASSWORD] Unexpected error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// OTP Verification and Password Reset route (Step 2: Verify OTP and Reset Password)
+app.post('/api/auth/verify-otp', async (req, res) => {
+  console.log('🔐 [VERIFY OTP] OTP verification request...');
+  const connection = await getConnection();
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      console.log('❌ [VERIFY OTP] Missing required fields');
+      return res.status(400).json({ error: 'Email, OTP, and new password are required' });
+    }
+
+    console.log(`🔐 [VERIFY OTP] Verifying OTP for: ${email}`);
+
+    // Find OTP in database
+    const [otpRows] = await connection.execute(
+      'SELECT id, user_id, otp, expires_at FROM otps WHERE email = ? AND otp = ? AND purpose = ? AND used = FALSE AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
+      [email, otp, 'password_reset']
+    );
+
+    if (otpRows.length === 0) {
+      console.log(`❌ [VERIFY OTP] Invalid or expired OTP for: ${email}`);
+      return res.status(400).json({ error: 'Invalid or expired verification code' });
+    }
+
+    const otpRecord = otpRows[0];
+    console.log(`✅ [VERIFY OTP] OTP verified for user: ${otpRecord.user_id}`);
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log(`🔒 [VERIFY OTP] New password hashed successfully`);
+
+    // Update user's password
+    await connection.execute(
+      'UPDATE users SET password = ? WHERE id = ?',
+      [hashedPassword, otpRecord.user_id]
+    );
+    console.log(`💾 [VERIFY OTP] Password updated for user: ${otpRecord.user_id}`);
+
+    // Mark OTP as used
+    await connection.execute(
+      'UPDATE otps SET used = TRUE WHERE id = ?',
+      [otpRecord.id]
+    );
+    console.log(`✅ [VERIFY OTP] OTP marked as used`);
+
+    // Clean up expired OTPs
+    await connection.execute('DELETE FROM otps WHERE expires_at <= NOW()');
+    console.log(`🧹 [VERIFY OTP] Expired OTPs cleaned up`);
+
+    console.log(`✅ [VERIFY OTP] Password reset successful for: ${email}`);
+    res.json({ message: 'Password reset successfully! You can now log in with your new password.' });
+
+  } catch (error) {
+    console.error('❌ [VERIFY OTP] Unexpected error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+
 
 // Chat routes
 app.get('/api/chats', authenticateToken, async (req, res) => {
@@ -569,7 +710,11 @@ app.post('/api/ai/generate', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('❌ [AI GENERATE] Error:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Failed to generate AI response' });
+
+    // Return the full error object so frontend can show specific model error messages
+    const errorData = error.response?.data || { error: error.message };
+
+    res.status(500).json(errorData);
   }
 });
 
@@ -583,6 +728,7 @@ initializeDatabase().then(() => {
     console.log(`📡 API endpoints available:`);
     console.log(`   POST /api/auth/signup - User registration`);
     console.log(`   POST /api/auth/signin - User login`);
+    console.log(`   POST /api/auth/forgot-password - Password reset`);
     console.log(`   GET  /api/chats - Get user chats`);
     console.log(`   POST /api/chats - Create new chat`);
     console.log(`   POST /api/ai/generate - Generate AI response`);
