@@ -27,16 +27,19 @@ CREATE TABLE IF NOT EXISTS chats (
     INDEX idx_created_at (created_at)
 );
 
--- Create messages table (ENCRYPTED STORAGE ONLY)
+-- Create messages table (ENCRYPTED STORAGE ONLY with image steganography support)
 CREATE TABLE IF NOT EXISTS messages (
     id VARCHAR(36) PRIMARY KEY,
     chat_id VARCHAR(36) NOT NULL,
     user_id VARCHAR(36) NOT NULL,
     role ENUM('user', 'ai') NOT NULL,
     -- Only encrypted data is stored (zero plaintext storage)
-    encrypted_data LONGTEXT,        -- AES-256 encrypted content
-    iv VARCHAR(255),                -- Base64 initialization vector
-    session_id VARCHAR(36),         -- Links to encryption key
+    encrypted_data LONGTEXT NULL,   -- AES-256 encrypted content
+    iv VARCHAR(255) NULL,           -- Base64 initialization vector
+    session_id VARCHAR(36) NULL,    -- Links to encryption key
+    -- Steganography image storage
+    image_data LONGTEXT NULL,       -- Base64 encoded steganographic image (with hidden text)
+    original_image_data LONGTEXT NULL, -- Base64 encoded original image (for display)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -67,3 +70,13 @@ INSERT IGNORE INTO users (id, full_name, email, password) VALUES
 
 -- Verify table creation
 SELECT 'Database initialized successfully!' as status;
+
+
+
+-- ALTER TABLE messages 
+-- ADD COLUMN image_data LONGTEXT NULL 
+-- COMMENT 'Base64 encoded steganographic image (with hidden text)';
+
+-- ALTER TABLE messages 
+-- ADD COLUMN original_image_data LONGTEXT NULL 
+-- COMMENT 'Base64 encoded original image (for display)';

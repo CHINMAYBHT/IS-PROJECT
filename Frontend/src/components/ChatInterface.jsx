@@ -171,11 +171,23 @@ const ChatInterface = ({ currentChat, handleUserSubmit }) => {
                     <Copy size={14} />
                   </button>
                   {msg.role === 'user' ? (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    <>
+                      {console.log(`🖼️ [RENDER] Message ${msg.id} imageUrl: ${msg.imageUrl ? 'YES (' + msg.imageUrl.slice(0, 50) + '...' + ')' : 'NO'}`)}
+                      {msg.imageUrl && (
+                        <img
+                          src={msg.imageUrl}
+                          alt="Uploaded"
+                          className="max-w-sm max-h-60 rounded-lg mb-2"
+                          onError={(e) => console.log('❌ [RENDER] Image failed to load:', msg.imageUrl)}
+                          onLoad={() => console.log('✅ [RENDER] Image loaded successfully')}
+                        />
+                      )}
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content || ''}</p>
+                    </>
                   ) : (
                       <div
                           className="text-base leading-relaxed whitespace-pre-wrap"
-                          dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
+                          dangerouslySetInnerHTML={{ __html: parseMarkdown(String(msg.content)) }}
                       />
                   )}
                 </div>

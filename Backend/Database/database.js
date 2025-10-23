@@ -69,6 +69,8 @@ async function createTables() {
       encrypted_data LONGTEXT,
       iv VARCHAR(255),
       session_id VARCHAR(36),
+      image_data LONGTEXT,
+      original_image_data LONGTEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

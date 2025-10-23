@@ -1391,7 +1391,10 @@ const App = () => {
             if (msg.sessionId === 'error') {
               return {
                 ...msg,
-                content: msg.encryptedMessage  // This is actually a plain text error message
+                content: msg.encryptedMessage, // This is actually a plain text error message
+                imageUrl: msg.original_image_data ? `data:image/png;base64,${msg.original_image_data}` : null,
+                imageData: msg.image_data,
+                originalImageData: msg.original_image_data
               };
             }
 
@@ -1399,23 +1402,34 @@ const App = () => {
               try {
                 // Decrypt the message
                 const decrypted = await encryptionClient.decrypt(msg.encryptedMessage, msg.iv, msg.sessionId);
+
+                // Convert image data to proper data URL for display
+                let imageUrl = null;
+                if (msg.original_image_data && msg.original_image_data !== null) {
+                  imageUrl = `data:image/png;base64,${msg.original_image_data}`;
+                }
+
+
                 return {
                   ...msg,
-                  content: decrypted.decrypted_data
+                  content: decrypted.decrypted_data,
+                  imageUrl: imageUrl
                 };
               } catch (decryptError) {
                 console.error(`Error decrypting message ${msg.id}:`, decryptError);
                 // Fall back to showing a more informative message
                 return {
                   ...msg,
-                  content: `[🔒 Message cannot be decrypted - session key missing or corrupted. Session: ${msg.sessionId}]`
+                  content: `[🔒 Message cannot be decrypted - session key missing or corrupted. Session: ${msg.sessionId}]`,
+                  imageUrl: msg.original_image_data ? `data:image/png;base64,${msg.original_image_data}` : null
                 };
               }
             } else {
               // Message is not fully encrypted or corrupted, show placeholder
               return {
                 ...msg,
-                content: '[⚠️ Message data incomplete]'
+                content: '[⚠️ Message data incomplete]',
+                imageUrl: msg.original_image_data ? `data:image/png;base64,${msg.original_image_data}` : null
               };
             }
           })
@@ -1525,6 +1539,7 @@ const App = () => {
   const handleUserSubmit = async (userMessage, selectedModel = 'openai/gpt-3.5-turbo', imageFile = null, imagePreviewUrl = null) => {
     // Convert image to base64 if provided
     let imageBase64 = null;
+
     if (imageFile) {
       imageBase64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1657,9 +1672,11 @@ const App = () => {
         encryptedUserMessage.encrypted_data,
         encryptedUserMessage.iv,
         sessionId,
-        'user'
+        'user',
+        imageBase64,
+        imageBase64
       );
-      
+
       if (encryptedAiResponse) {
         // Store encrypted AI response
         await apiClient.storeEncryptedMessage(
@@ -1668,7 +1685,9 @@ const App = () => {
           encryptedAiResponse,
           aiIv,
           sessionId,
-          'ai'
+          'ai',
+          imageBase64,
+          imageBase64
         );
       } else {
         // Store error message as plain text
@@ -1678,7 +1697,9 @@ const App = () => {
           aiContent,
           '',
           'error',
-          'ai'
+          'ai',
+          imageBase64,
+          imageBase64
         );
       }
 
@@ -1792,7 +1813,9 @@ const App = () => {
         encryptedMessage.encrypted_data,  // Encrypted user message
         encryptedMessage.iv,
         sessionId,
-        'user'
+        'user',
+        imageBase64,
+        imageBase64
       );
 
       if (encryptedAiResponse) {
@@ -1803,7 +1826,9 @@ const App = () => {
           encryptedAiResponse,
           aiIv,
           sessionId,
-          'ai'
+          'ai',
+          imageBase64,
+          imageBase64
         );
       } else {
         // Store error message as plain text
@@ -1813,7 +1838,9 @@ const App = () => {
           aiContent,
           '',
           'error',
-          'ai'
+          'ai',
+          imageBase64,
+          imageBase64
         );
       }
 

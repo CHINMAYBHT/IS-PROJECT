@@ -161,8 +161,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     if (rows.length === 0) {
       console.log(`❌ [FORGOT PASSWORD] User not found: ${email}`);
-      // Return success to avoid email enumeration attacks
-      return res.json({ message: 'If this email is registered, you will receive a verification code.' });
+      // Return error message instead of generic success to show error in UI
+      return res.status(404).json({ error: 'No account found with this email address.' });
     }
 
     const user = rows[0];
@@ -398,12 +398,18 @@ app.delete('/api/chats/:id', authenticateToken, async (req, res) => {
 // Store messages in chat (only encrypted versions are stored)
 app.post('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
   const { chatId } = req.params;
-  const { content, encryptedMessage, iv, sessionId, role } = req.body;
+  const { content = null, encryptedMessage = null, iv = null, sessionId = null, role = null, imageData = null, originalImageData = null, plainTextMessage = null } = req.body;
 
   console.log(`💾 [STORE MESSAGE] User ${req.user.email} storing message in chat: ${chatId}`);
   const connection = await getConnection();
 
   try {
+    // Validate required fields
+    if (!role) {
+      console.log(`❌ [STORE MESSAGE] Missing required field: role`);
+      return res.status(400).json({ error: 'Role is required' });
+    }
+
     // Check if chat exists and belongs to user
     const [existingChat] = await connection.execute(
       'SELECT id, encrypted FROM chats WHERE id = ? AND user_id = ?',
@@ -417,23 +423,50 @@ app.post('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
 
     const isEncryptedChat = existingChat[0].encrypted;
 
+    // Handle steganography for image uploads
+    let processedImageData = imageData;
+    if (imageData && plainTextMessage) {
+      console.log('🖼️ [STEGANOGRAPHY] Applying steganography to hide message in image...');
+      try {
+        const stegoResponse = await axios.post('http://localhost:5001/api/steganography/hide', {
+          image_data: imageData,
+          text: plainTextMessage
+        }, {
+          timeout: 10000
+        });
+
+        if (stegoResponse.data.success) {
+          processedImageData = stegoResponse.data.steganographic_image;
+          console.log('✅ [STEGANOGRAPHY] Text successfully hidden in image');
+        } else {
+          console.log('❌ [STEGANOGRAPHY] Failed to apply steganography, using original image');
+          processedImageData = imageData; // Fall back to original
+        }
+      } catch (error) {
+        console.log('❌ [STEGANOGRAPHY] Steganography service error, using original image:', error.message);
+        processedImageData = imageData; // Fall back to original
+      }
+    }
+
     const messageId = uuidv4();
 
     // For encrypted chats: ONLY store encrypted data, never plain text
     if (isEncryptedChat) {
       await connection.execute(
-        'INSERT INTO messages (id, chat_id, user_id, role, content, encrypted_data, iv, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-        [messageId, chatId, req.user.id, role, null, encryptedMessage, iv, sessionId] // content is null for encrypted chats
+        'INSERT INTO messages (id, chat_id, user_id, role, content, encrypted_data, iv, session_id, image_data, original_image_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+        [messageId, chatId, req.user.id, role, null, encryptedMessage, iv, sessionId, processedImageData, originalImageData] // content is null for encrypted chats
       );
       console.log(`🔐 [STORE ENCRYPTED MESSAGE] Only encrypted data stored for secure chat: ${chatId}`);
+      console.log(`🖼️ [STORE MESSAGE] Steganographic image stored: ${processedImageData ? 'Yes' : 'No'}`);
     }
     // For non-encrypted chats: Store plain text (legacy support, but should ideally be encrypted too)
     else {
       await connection.execute(
-        'INSERT INTO messages (id, chat_id, user_id, role, content, encrypted_data, iv, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-        [messageId, chatId, req.user.id, role, content, null, null, null] // encrypted fields are null for plain text chats
+        'INSERT INTO messages (id, chat_id, user_id, role, content, encrypted_data, iv, session_id, image_data, original_image_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+        [messageId, chatId, req.user.id, role, content, null, null, null, processedImageData, originalImageData] // encrypted fields are null for plain text chats
       );
       console.log(`📝 [STORE PLAIN MESSAGE] Plain text stored (consider encrypting for security): ${chatId}`);
+      console.log(`🖼️ [STORE MESSAGE] Steganographic image stored: ${processedImageData ? 'Yes' : 'No'}`);
     }
 
     const message = {
@@ -442,6 +475,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
       iv: isEncryptedChat ? iv : null,
       sessionId: isEncryptedChat ? sessionId : null,
       content: isEncryptedChat ? null : content, // Plain text only returned for non-encrypted chats
+      imageData: processedImageData,
+      originalImageData: originalImageData,
       role,
       chatId,
       userId: req.user.id,
@@ -480,7 +515,7 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const isEncryptedChat = existingChat[0].encrypted;
 
     const [rows] = await connection.execute(
-      'SELECT id, role, content, encrypted_data as encryptedMessage, iv, session_id as sessionId, created_at as createdAt FROM messages WHERE chat_id = ? ORDER BY created_at ASC',
+      'SELECT id, role, content, encrypted_data as encryptedMessage, iv, session_id as sessionId, image_data, original_image_data, created_at as createdAt FROM messages WHERE chat_id = ? ORDER BY created_at ASC',
       [chatId]
     );
 
@@ -491,7 +526,8 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
         content: null, // Explicitly set plain text to null for encrypted chats
         encrypted: true
       }));
-      console.log(`� [GET ENCRYPTED MESSAGES] Returning ${secureMessages.length} encrypted messages (no plain text)`);
+      console.log(`🔐 [GET ENCRYPTED MESSAGES] Returning ${secureMessages.length} encrypted messages (no plain text)`);
+      console.log(`🖼️ [GET MESSAGES] Including ${rows.filter(m => m.image_data || m.original_image_data).length} messages with images`);
       return res.json(secureMessages);
     }
 
@@ -501,6 +537,7 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
       encrypted: false
     }));
     console.log(`📝 [GET PLAIN MESSAGES] Returning ${plainMessages.length} plain text messages (consider upgrading to encrypted)`);
+    console.log(`🖼️ [GET MESSAGES] Including ${rows.filter(m => m.image_data || m.original_image_data).length} messages with images`);
     res.json(plainMessages);
   } catch (error) {
     console.error('❌ [GET MESSAGES] Database error:', error);

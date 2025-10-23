@@ -268,15 +268,18 @@ class ApiClient {
   }
 
   // Chat message storage and retrieval for encrypted chats
-  async storeEncryptedMessage(chatId, message, encryptedMessage, iv, sessionId, role = 'user') {
+  async storeEncryptedMessage(chatId, plainTextMessage, encryptedMessage, iv, sessionId, role = 'user', imageData = null, originalImageData = null) {
     return await this.request(`/api/chats/${chatId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
-        content: message || null,  // Plain text content
+        content: plainTextMessage || null,  // Plain text content for non-encrypted
+        plainTextMessage: plainTextMessage || null,  // Plain text message for steganography
         encryptedMessage: encryptedMessage || null,  // Encrypted data
         iv: iv || null,
         sessionId: sessionId || null,
-        role: role || 'user'
+        role: role || 'user',
+        imageData: imageData || null,  // Image data for steganography
+        originalImageData: originalImageData || null  // Original image data
       })
     });
   }

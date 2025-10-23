@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 from AES import AESCipher
 from rsa import rsa_encrypt, rsa_decrypt
+from steganography import hide_text_in_image, reveal_text_from_image, validate_image_for_steganography
 # Import original RSA functions for compatibility
 def rsa_encrypt_simple(message, public_key):
     n, e = public_key
@@ -277,6 +278,77 @@ def load_session_key(session_id):
         return None
     finally:
         conn.close()
+
+@app.route('/api/steganography/hide', methods=['POST'])
+def hide_text():
+    """Hide text in an image using steganography"""
+    print('🖼️ [STEGANOGRAPHY] Hide text request received...')
+
+    data = request.json
+    if not all(k in data for k in ['image_data', 'text']):
+        print('❌ [STEGANOGRAPHY] Missing required fields: image_data or text')
+        return jsonify({'success': False, 'error': 'image_data and text required'}), 400
+
+    image_data = data['image_data']
+    text = data['text']
+
+    print(f'🖼️ [STEGANOGRAPHY] Hiding {len(text)} characters in image...')
+
+    result = hide_text_in_image(image_data, text)
+
+    if result['success']:
+        print('✅ [STEGANOGRAPHY] Text hidden successfully')
+        return jsonify({
+            'success': True,
+            'steganographic_image': result['steganographic_image']
+        })
+    else:
+        print(f'❌ [STEGANOGRAPHY] Failed to hide text: {result["error"]}')
+        return jsonify(result), 500
+
+@app.route('/api/steganography/reveal', methods=['POST'])
+def reveal_text():
+    """Reveal hidden text from a steganographic image"""
+    print('🔍 [STEGANOGRAPHY] Reveal text request received...')
+
+    data = request.json
+    if not data.get('image_data'):
+        print('❌ [STEGANOGRAPHY] Missing required field: image_data')
+        return jsonify({'success': False, 'error': 'image_data required'}), 400
+
+    image_data = data['image_data']
+
+    print('🔍 [STEGANOGRAPHY] Attempting to reveal hidden text...')
+
+    result = reveal_text_from_image(image_data)
+
+    if result['success']:
+        hidden_text = result['hidden_text']
+        print(f'✅ [STEGANOGRAPHY] Revealed {len(hidden_text)} characters of hidden text')
+        return jsonify({
+            'success': True,
+            'hidden_text': hidden_text
+        })
+    else:
+        print(f'❌ [STEGANOGRAPHY] Failed to reveal text: {result["error"]}')
+        return jsonify(result), 500
+
+@app.route('/api/steganography/validate', methods=['POST'])
+def validate_image():
+    """Validate if an image can be used for steganography"""
+    print('⚖️ [STEGANOGRAPHY] Image validation request received...')
+
+    data = request.json
+    if not data.get('image_data'):
+        print('❌ [STEGANOGRAPHY] Missing required field: image_data')
+        return jsonify({'success': False, 'error': 'image_data required'}), 400
+
+    image_data = data['image_data']
+
+    result = validate_image_for_steganography(image_data)
+
+    print(f'⚖️ [STEGANOGRAPHY] Validation result: {result}')
+    return jsonify(result)
 
 @app.route('/api/encryption/health', methods=['GET'])
 def health_check():
